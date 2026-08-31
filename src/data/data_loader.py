@@ -1,5 +1,6 @@
 import os
 
+import streamlit as st
 from dotenv import load_dotenv
 from supabase import Client, create_client
 
@@ -32,6 +33,31 @@ SUPABASE_KEY = os.getenv(
 )
 
 
+# Streamlit Community Cloud fallback
+if not SUPABASE_URL:
+    try:
+        SUPABASE_URL = st.secrets[
+            "SUPABASE_URL"
+        ]
+    except (
+        KeyError,
+        FileNotFoundError,
+    ):
+        pass
+
+
+if not SUPABASE_KEY:
+    try:
+        SUPABASE_KEY = st.secrets[
+            "SUPABASE_SERVICE_ROLE_KEY"
+        ]
+    except (
+        KeyError,
+        FileNotFoundError,
+    ):
+        pass
+
+
 # ============================================================
 # SUPABASE CLIENT
 # ============================================================
@@ -43,13 +69,14 @@ def get_supabase_client() -> Client:
 
     if not SUPABASE_URL:
         raise ValueError(
-            f"SUPABASE_URL is missing from {ENV_FILE}."
+            "SUPABASE_URL is missing. "
+            f"Checked {ENV_FILE} and Streamlit Secrets."
         )
 
     if not SUPABASE_KEY:
         raise ValueError(
-            "SUPABASE_SERVICE_ROLE_KEY "
-            f"is missing from {ENV_FILE}."
+            "SUPABASE_SERVICE_ROLE_KEY is missing. "
+            f"Checked {ENV_FILE} and Streamlit Secrets."
         )
 
     return create_client(
@@ -71,7 +98,9 @@ def load_competitions() -> list[dict]:
 
     response = (
         supabase
-        .table("competitions")
+        .table(
+            "competitions"
+        )
         .select(
             "id,name"
         )
