@@ -1,108 +1,42 @@
-import os
-
-import streamlit as st
-from dotenv import load_dotenv
-from supabase import Client, create_client
-
-
-# ============================================================
-# ENVIRONMENT
-# ============================================================
-
-ENV_FILE = os.getenv(
-    "ENV_FILE",
-    ".env",
+from src.data.supabase_client import (
+    get_supabase_client,
 )
 
-load_dotenv(
-    dotenv_path=ENV_FILE,
-    override=True,
-)
-
-
-# ============================================================
-# SUPABASE CONFIGURATION
-# ============================================================
-
-SUPABASE_URL = os.getenv(
-    "SUPABASE_URL"
-)
-
-SUPABASE_KEY = os.getenv(
-    "SUPABASE_SERVICE_ROLE_KEY"
-)
-
-
-# Streamlit Community Cloud fallback
-if not SUPABASE_URL:
-    try:
-        SUPABASE_URL = st.secrets[
-            "SUPABASE_URL"
-        ]
-    except (
-        KeyError,
-        FileNotFoundError,
-    ):
-        pass
-
-
-if not SUPABASE_KEY:
-    try:
-        SUPABASE_KEY = st.secrets[
-            "SUPABASE_SERVICE_ROLE_KEY"
-        ]
-    except (
-        KeyError,
-        FileNotFoundError,
-    ):
-        pass
-
-
-# ============================================================
-# SUPABASE CLIENT
-# ============================================================
-
-def get_supabase_client() -> Client:
-    """
-    Create and return the Supabase client.
-    """
-
-    if not SUPABASE_URL:
-        raise ValueError(
-            "SUPABASE_URL is missing. "
-            f"Checked {ENV_FILE} and Streamlit Secrets."
-        )
-
-    if not SUPABASE_KEY:
-        raise ValueError(
-            "SUPABASE_SERVICE_ROLE_KEY is missing. "
-            f"Checked {ENV_FILE} and Streamlit Secrets."
-        )
-
-    return create_client(
-        SUPABASE_URL,
-        SUPABASE_KEY,
-    )
-
-
-# ============================================================
-# COMPETITIONS
-# ============================================================
 
 def load_competitions() -> list[dict]:
-    """
-    Load all competitions from Supabase.
-    """
-
     supabase = get_supabase_client()
 
     response = (
         supabase
-        .table(
-            "competitions"
-        )
+        .table("competitions")
+        .select("id,name")
+        .order("id")
+        .execute()
+    )
+
+    return response.data
+
+
+def load_matches(
+    competition_id: int,
+) -> list[dict]:
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("matches")
         .select(
-            "id,name"
+            "id,"
+            "competition_id,"
+            "match_date,"
+            "opponent,"
+            "venue,"
+            "aek_score,"
+            "opponent_score"
+        )
+        .eq(
+            "competition_id",
+            competition_id,
         )
         .order(
             "id"
@@ -111,3 +45,106 @@ def load_competitions() -> list[dict]:
     )
 
     return response.data
+
+
+def load_events(
+    match_id: int,
+    event_family: str | None = None,
+    phase: str | None = None,
+) -> list[dict]:
+    supabase = get_supabase_client()
+
+    query = (
+        supabase
+        .table("sportscode_events")
+        .select(
+            "id,"
+            "match_id,"
+            "import_id,"
+            "source_instance_id,"
+            "code,"
+            "event_family,"
+            "phase,"
+            "start_seconds,"
+            "end_seconds"
+        )
+        .eq(
+            "match_id",
+            match_id,
+        )
+    )
+
+    if event_family:
+        query = query.eq(
+            "event_family",
+            event_family,
+        )
+
+    if phase:
+        query = query.eq(
+            "phase",
+            phase,
+        )
+
+    response = (
+        query
+        .order("start_seconds")
+        .execute()
+    )
+
+    return response.data
+
+
+def load_event_labels(
+    event_ids: list[int],
+) -> list[dict]:
+    if not event_ids:
+        return []
+
+    supabase = get_supabase_client()
+
+    response = (
+        supabase
+        .table("sportscode_event_labels")
+        .select(
+            "id,"
+            "event_id,"
+            "group_name_raw,"
+            "group_key,"
+            "value_raw,"
+            "value,"
+            "label_order"
+        )
+        .in_(
+            "event_id",
+            event_ids,
+        )
+        .order("event_id")
+        .order("label_order")
+        .execute()
+    )
+
+    return response.data
+
+
+def load_sportscode_data(
+    match_id: int,
+    event_family: str,
+    phase: str,
+) -> tuple[list[dict], list[dict]]:
+    events = load_events(
+        match_id=match_id,
+        event_family=event_family,
+        phase=phase,
+    )
+
+    event_ids = [
+        event["id"]
+        for event in events
+    ]
+
+    labels = load_event_labels(
+        event_ids
+    )
+
+    return events, labels

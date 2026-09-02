@@ -170,3 +170,8 @@ __marimo__/
 # OS files
 .DS_Store
 Thumbs.db
+
+google-oauth-client.json
+token.json
+
+node_modules/
