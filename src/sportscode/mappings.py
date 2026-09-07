@@ -155,6 +155,62 @@ GROUP_KEY_MAP = {
 }
 
 
+# ============================================================
+# VALUE NORMALIZATION
+# ============================================================
+
+SET_PLAY_TYPE_VALUE_MAP = {
+    "FREE KICK C":
+        "Free Kick Cross",
+
+    "FREE KICK CROSS":
+        "Free Kick Cross",
+
+    "FREE KICK D":
+        "Free Kick Direct",
+
+    "FREE KICK DIRECT":
+        "Free Kick Direct",
+
+    "CORNER KICK":
+        "Corner Kick",
+
+    "PENALTY KICK":
+        "Penalty Kick",
+
+    "THROW IN":
+        "Throw In",
+}
+
+
+def normalize_group_value(
+    group_key: str | None,
+    value: str | None,
+) -> str | None:
+    """
+    Normalize selected Sportscode label values while keeping
+    all unrelated raw values unchanged.
+
+    This should be called by the parser/importer after the raw
+    Sportscode group name has been converted with GROUP_KEY_MAP.
+    """
+    if value is None:
+        return None
+
+    cleaned_value = str(value).strip()
+
+    if not cleaned_value:
+        return cleaned_value
+
+    if group_key == "set_play_type":
+        return SET_PLAY_TYPE_VALUE_MAP.get(
+            cleaned_value.upper(),
+            cleaned_value,
+        )
+
+    return cleaned_value
+
+
 COMPETITION_NAME_MAP = {
     "CHAMPIONS LEAGUE":
         "Champions League",

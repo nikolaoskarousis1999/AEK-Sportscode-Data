@@ -61,24 +61,70 @@ def get_competition_name(
 def get_opponent(
     match_folder: str,
 ) -> str:
+    """
+    Extract the opponent name from a match-folder name.
+
+    Supported examples:
+        AEK-Iraklis           -> Iraklis
+        Iraklis-AEK           -> Iraklis
+        MD1_AEK-Iraklis       -> Iraklis
+        MD1_Iraklis-AEK       -> Iraklis
+        MD12_AEK-Levski       -> Levski
+        MD12_Levski-AEK       -> Levski
+
+    If the folder name cannot be resolved safely, return the
+    original folder name rather than guessing.
+    """
+    normalized_folder = (
+        normalize_spaces(
+            match_folder
+        )
+        or match_folder
+    )
+
     parts = [
         part.strip()
         for part in (
-            match_folder.split("-")
+            normalized_folder.split("-")
         )
         if part.strip()
     ]
 
-    opponents = [
-        part
-        for part in parts
-        if part.upper() != "AEK"
-    ]
+    opponents = []
+
+    for part in parts:
+        # Treat AEK as a team token even when the folder part
+        # contains a matchday prefix, e.g. "MD1_AEK".
+        tokens = [
+            token
+            for token in re.split(
+                r"[_\s]+",
+                part.upper(),
+            )
+            if token
+        ]
+
+        if "AEK" in tokens:
+            continue
+
+        # Remove a leading matchday prefix from the opponent side
+        # if the Drive folder is named like "MD1_Iraklis-AEK".
+        cleaned_part = re.sub(
+            r"^MD\s*\d+[_\s]*",
+            "",
+            part,
+            flags=re.IGNORECASE,
+        ).strip()
+
+        if cleaned_part:
+            opponents.append(
+                cleaned_part
+            )
 
     if len(opponents) == 1:
         return opponents[0]
 
-    return match_folder
+    return normalized_folder
 
 
 def find_venue(

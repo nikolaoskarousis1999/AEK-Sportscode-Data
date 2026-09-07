@@ -13,7 +13,9 @@ FC_WON = "1ST CONTACT WON"
 FC_LOST = "1ST CONTACT LOST"
 
 SHOT = "SHOT"
+GOAL = "GOAL"
 SHOT_CONCEDED = "SHOT CONCEDED"
+GOAL_CONCEDED = "GOAL CONCEDED"
 
 SECOND_PHASE_ATTACK = "2ND PHASE ATTACK"
 SECOND_PHASE = "2ND PHASE"
@@ -122,6 +124,37 @@ def count_events_with_value(
             record,
             key,
             target,
+        )
+    )
+
+
+def event_has_any_value(
+    record: dict,
+    key: str,
+    targets: list[str],
+) -> bool:
+    return any(
+        event_has_value(
+            record,
+            key,
+            target,
+        )
+        for target in targets
+    )
+
+
+def count_events_with_any_value(
+    records: list[dict],
+    key: str,
+    targets: list[str],
+) -> int:
+    return sum(
+        1
+        for record in records
+        if event_has_any_value(
+            record,
+            key,
+            targets,
         )
     )
 
@@ -311,19 +344,35 @@ def get_corner_metrics(
     )
 
     if phase == "defensive":
-        shot_label = SHOT_CONCEDED
+        attempt_labels = [
+            SHOT_CONCEDED,
+            GOAL_CONCEDED,
+        ]
+        goal_label = GOAL_CONCEDED
         second_phase_label = SECOND_PHASE
         counter_label = COUNTER_LAUNCHED
 
     else:
-        shot_label = SHOT
+        # GOAL may be a terminal outcome without SHOT.
+        # Therefore Attempt = SHOT OR GOAL.
+        attempt_labels = [
+            SHOT,
+            GOAL,
+        ]
+        goal_label = GOAL
         second_phase_label = SECOND_PHASE_ATTACK
         counter_label = COUNTER_ALLOWED
 
-    shot = count_events_with_value(
+    attempt = count_events_with_any_value(
         records,
         "outcome",
-        shot_label,
+        attempt_labels,
+    )
+
+    goal = count_events_with_value(
+        records,
+        "outcome",
+        goal_label,
     )
 
     second_phase = count_events_with_value(
@@ -348,11 +397,11 @@ def get_corner_metrics(
         )
     ]
 
-    second_phase_shot = (
-        count_events_with_value(
+    second_phase_attempt = (
+        count_events_with_any_value(
             second_phase_records,
             "outcome",
-            shot_label,
+            attempt_labels,
         )
     )
 
@@ -363,8 +412,11 @@ def get_corner_metrics(
         "fc_won":
             fc_won,
 
-        "shot":
-            shot,
+        "attempt":
+            attempt,
+
+        "goal":
+            goal,
 
         "second_phase":
             second_phase,
@@ -380,8 +432,8 @@ def get_corner_metrics(
                 second_phase_records
             ),
 
-        "second_phase_shot":
-            second_phase_shot,
+        "second_phase_attempt":
+            second_phase_attempt,
     }
 
 
@@ -424,71 +476,90 @@ def render_kpis(
             include_unknown=True,
         )
 
-        first_row = [
-            (
-                "Corners Faced",
-                str(total),
-                None,
-            ),
-            (
-                "First Contact Won",
-                format_rate(
-                    metrics["fc_won"],
-                    total,
-                ),
-                None,
-            ),
-            (
-                "Shot Conceded",
-                format_rate(
-                    metrics["shot"],
-                    total,
-                ),
-                None,
-            ),
-            (
-                "Counter Launched",
-                format_rate(
-                    metrics["counter"],
-                    total,
-                ),
-                None,
-            ),
-        ]
-
-        second_row = [
-            (
-                "2nd Phase",
-                format_rate(
-                    metrics["second_phase"],
-                    total,
-                ),
-                None,
-            ),
-            (
-                "Clearance",
-                format_rate(
-                    metrics["clearance"],
-                    total,
-                ),
-                None,
-            ),
-            (
-                "Most Common Delivery Type",
-                delivery_type,
+        rows = [
+            [
                 (
-                    f"{delivery_count}/"
-                    f"{total} corners"
+                    "Corners Faced",
+                    str(total),
+                    None,
                 ),
-            ),
-            (
-                "Most Common Opponent Players",
-                opponent_players,
                 (
-                    f"{opponent_players_count}/"
-                    f"{total} corners"
+                    "First Contact Won",
+                    format_rate(
+                        metrics["fc_won"],
+                        total,
+                    ),
+                    None,
                 ),
-            ),
+                (
+                    "Attempt Conceded",
+                    format_rate(
+                        metrics["attempt"],
+                        total,
+                    ),
+                    "Attempt Conceded = SHOT CONCEDED or GOAL CONCEDED.",
+                ),
+                (
+                    "Goal Conceded",
+                    format_rate(
+                        metrics["goal"],
+                        total,
+                    ),
+                    None,
+                ),
+            ],
+            [
+                (
+                    "Goal Conceded Conversion",
+                    format_rate(
+                        metrics["goal"],
+                        metrics["attempt"],
+                    ),
+                    "GOAL CONCEDED / Attempt Conceded.",
+                ),
+                (
+                    "2nd Phase",
+                    format_rate(
+                        metrics["second_phase"],
+                        total,
+                    ),
+                    None,
+                ),
+                (
+                    "Counter Launched",
+                    format_rate(
+                        metrics["counter"],
+                        total,
+                    ),
+                    None,
+                ),
+                (
+                    "Clearance",
+                    format_rate(
+                        metrics["clearance"],
+                        total,
+                    ),
+                    None,
+                ),
+            ],
+            [
+                (
+                    "Most Common Delivery Type",
+                    delivery_type,
+                    (
+                        f"{delivery_count}/"
+                        f"{total} corners"
+                    ),
+                ),
+                (
+                    "Most Common Opponent Players",
+                    opponent_players,
+                    (
+                        f"{opponent_players_count}/"
+                        f"{total} corners"
+                    ),
+                ),
+            ],
         ]
 
     else:
@@ -501,102 +572,103 @@ def render_kpis(
             include_unknown=True,
         )
 
-        first_row = [
-            (
-                "Total Corners",
-                str(total),
-                None,
-            ),
-            (
-                "First Contact Won",
-                format_rate(
-                    metrics["fc_won"],
-                    total,
+        rows = [
+            [
+                (
+                    "Total Corners",
+                    str(total),
+                    None,
                 ),
-                None,
-            ),
-            (
-                "Shot",
-                format_rate(
-                    metrics["shot"],
-                    total,
+                (
+                    "First Contact Won",
+                    format_rate(
+                        metrics["fc_won"],
+                        total,
+                    ),
+                    None,
                 ),
-                None,
-            ),
-            (
-                "Counter Allowed",
-                format_rate(
-                    metrics["counter"],
-                    total,
+                (
+                    "Attempt",
+                    format_rate(
+                        metrics["attempt"],
+                        total,
+                    ),
+                    "Attempt = SHOT or GOAL.",
                 ),
-                None,
-            ),
+                (
+                    "Goal",
+                    format_rate(
+                        metrics["goal"],
+                        total,
+                    ),
+                    None,
+                ),
+            ],
+            [
+                (
+                    "Goal Conversion",
+                    format_rate(
+                        metrics["goal"],
+                        metrics["attempt"],
+                    ),
+                    "GOAL / Attempt.",
+                ),
+                (
+                    "2nd Phase Attack",
+                    format_rate(
+                        metrics["second_phase"],
+                        total,
+                    ),
+                    None,
+                ),
+                (
+                    "Counter Allowed",
+                    format_rate(
+                        metrics["counter"],
+                        total,
+                    ),
+                    None,
+                ),
+                (
+                    "Most Common Delivery Type",
+                    delivery_type,
+                    (
+                        f"{delivery_count}/"
+                        f"{total} corners"
+                    ),
+                ),
+            ],
+            [
+                (
+                    "Most Common Taker",
+                    taker,
+                    (
+                        f"{taker_count}/"
+                        f"{total} corners"
+                    ),
+                ),
+            ],
         ]
 
-        second_row = [
-            (
-                "2nd Phase Attack",
-                format_rate(
-                    metrics["second_phase"],
-                    total,
-                ),
-                None,
-            ),
-            (
-                "Most Common Delivery Type",
-                delivery_type,
-                (
-                    f"{delivery_count}/"
-                    f"{total} corners"
-                ),
-            ),
-            (
-                "Most Common Taker",
-                taker,
-                (
-                    f"{taker_count}/"
-                    f"{total} corners"
-                ),
-            ),
-        ]
+    for row in rows:
+        columns = st.columns(
+            len(row)
+        )
 
-    columns = st.columns(
-        len(first_row)
-    )
-
-    for column, (
-        label,
-        value,
-        help_text,
-    ) in zip(
-        columns,
-        first_row,
-    ):
-        with column:
-            st.metric(
-                label,
-                value,
-                help=help_text,
-            )
-
-    columns = st.columns(
-        len(second_row)
-    )
-
-    for column, (
-        label,
-        value,
-        help_text,
-    ) in zip(
-        columns,
-        second_row,
-    ):
-        with column:
-            st.metric(
-                label,
-                value,
-                help=help_text,
-            )
+        for column, (
+            label,
+            value,
+            help_text,
+        ) in zip(
+            columns,
+            row,
+        ):
+            with column:
+                st.metric(
+                    label,
+                    value,
+                    help=help_text,
+                )
 
 
 # ============================================================
@@ -1724,9 +1796,9 @@ def build_effectiveness_dataframe(
                     total,
                 ),
 
-            "Shot %":
+            "Attempt %":
                 calculate_rate(
-                    metrics["shot"],
+                    metrics["attempt"],
                     total,
                 ),
 
@@ -1754,10 +1826,22 @@ def build_effectiveness_dataframe(
         if phase == "defensive":
             row.update(
                 {
-                    "Shot Conceded":
+                    "Attempt Conceded":
                         format_rate(
-                            metrics["shot"],
+                            metrics["attempt"],
                             total,
+                        ),
+
+                    "Goal Conceded":
+                        format_rate(
+                            metrics["goal"],
+                            total,
+                        ),
+
+                    "Goal Conceded Conversion":
+                        format_rate(
+                            metrics["goal"],
+                            metrics["attempt"],
                         ),
 
                     "2nd Phase":
@@ -1777,10 +1861,22 @@ def build_effectiveness_dataframe(
         else:
             row.update(
                 {
-                    "Shot":
+                    "Attempt":
                         format_rate(
-                            metrics["shot"],
+                            metrics["attempt"],
                             total,
+                        ),
+
+                    "Goal":
+                        format_rate(
+                            metrics["goal"],
+                            total,
+                        ),
+
+                    "Goal Conversion":
+                        format_rate(
+                            metrics["goal"],
+                            metrics["attempt"],
                         ),
 
                     "2nd Phase Attack":
@@ -1857,8 +1953,8 @@ def render_first_contact_chart(
         if phase == "defensive":
             chart_metrics = [
                 (
-                    "Shot Conceded",
-                    metrics["shot"],
+                    "Attempt Conceded",
+                    metrics["attempt"],
                 ),
                 (
                     "2nd Phase",
@@ -1873,8 +1969,8 @@ def render_first_contact_chart(
         else:
             chart_metrics = [
                 (
-                    "Shot",
-                    metrics["shot"],
+                    "Attempt",
+                    metrics["attempt"],
                 ),
                 (
                     "2nd Phase",
@@ -2029,9 +2125,9 @@ def render_delivery_type_scatter(
                         total,
                     ),
 
-                "Shot Rate":
+                "Attempt Rate":
                     calculate_rate(
-                        metrics["shot"],
+                        metrics["attempt"],
                         total,
                     ),
 
@@ -2041,9 +2137,9 @@ def render_delivery_type_scatter(
                         total,
                     ),
 
-                "Shot Display":
+                "Attempt Display":
                     format_rate(
-                        metrics["shot"],
+                        metrics["attempt"],
                         total,
                     ),
 
@@ -2072,8 +2168,8 @@ def render_delivery_type_scatter(
         return
 
     if phase == "defensive":
-        shot_label = (
-            "Shot Conceded"
+        attempt_label = (
+            "Attempt Conceded"
         )
 
         counter_label = (
@@ -2081,18 +2177,18 @@ def render_delivery_type_scatter(
         )
 
         y_title = (
-            "Shot Conceded Rate (%)"
+            "Attempt Conceded Rate (%)"
         )
 
     else:
-        shot_label = "Shot"
+        attempt_label = "Attempt"
 
         counter_label = (
             "Counter Allowed"
         )
 
         y_title = (
-            "Shot Rate (%)"
+            "Attempt Rate (%)"
         )
 
     x_min = max(
@@ -2129,11 +2225,11 @@ def render_delivery_type_scatter(
     text_positions = [
         (
             "bottom center"
-            if shot_rate >= 94
+            if attempt_rate >= 94
             else "top center"
         )
-        for shot_rate
-        in df["Shot Rate"]
+        for attempt_rate
+        in df["Attempt Rate"]
     ]
 
     fig = px.scatter(
@@ -2141,14 +2237,14 @@ def render_delivery_type_scatter(
 
         x="FC Won Rate",
 
-        y="Shot Rate",
+        y="Attempt Rate",
 
         text="Delivery Type",
 
         custom_data=[
             "Corners",
             "FC Won Display",
-            "Shot Display",
+            "Attempt Display",
             "2nd Phase Display",
             "Counter Display",
         ],
@@ -2186,7 +2282,7 @@ def render_delivery_type_scatter(
             "%{customdata[0]}<br>"
             "FC Won: "
             "%{customdata[1]}<br>"
-            f"{shot_label}: "
+            f"{attempt_label}: "
             "%{customdata[2]}<br>"
             "2nd Phase: "
             "%{customdata[3]}<br>"
@@ -2330,7 +2426,9 @@ def render_effectiveness_table(
             display_columns = [
                 category_name,
                 "Corners",
-                "Shot Conceded",
+                "Attempt Conceded",
+                "Goal Conceded",
+                "Goal Conceded Conversion",
                 "2nd Phase",
                 "Counter Launched",
             ]
@@ -2340,7 +2438,9 @@ def render_effectiveness_table(
                 category_name,
                 "Corners",
                 "FC Won",
-                "Shot Conceded",
+                "Attempt Conceded",
+                "Goal Conceded",
+                "Goal Conceded Conversion",
                 "2nd Phase",
                 "Counter Launched",
             ]
@@ -2350,7 +2450,9 @@ def render_effectiveness_table(
             display_columns = [
                 category_name,
                 "Corners",
-                "Shot",
+                "Attempt",
+                "Goal",
+                "Goal Conversion",
                 "2nd Phase Attack",
                 "Counter Allowed",
             ]
@@ -2360,7 +2462,9 @@ def render_effectiveness_table(
                 category_name,
                 "Corners",
                 "FC Won",
-                "Shot",
+                "Attempt",
+                "Goal",
+                "Goal Conversion",
                 "2nd Phase Attack",
                 "Counter Allowed",
             ]
@@ -2588,9 +2692,9 @@ def build_zone_dataframe(
                     total,
                 ),
 
-            "Shot %":
+            "Attempt %":
                 calculate_rate(
-                    metrics["shot"],
+                    metrics["attempt"],
                     total,
                 ),
 
@@ -2610,10 +2714,22 @@ def build_zone_dataframe(
         if phase == "defensive":
             row.update(
                 {
-                    "Shot Conceded":
+                    "Attempt Conceded":
                         format_rate(
-                            metrics["shot"],
+                            metrics["attempt"],
                             total,
+                        ),
+
+                    "Goal Conceded":
+                        format_rate(
+                            metrics["goal"],
+                            total,
+                        ),
+
+                    "Goal Conceded Conversion":
+                        format_rate(
+                            metrics["goal"],
+                            metrics["attempt"],
                         ),
 
                     "2nd Phase":
@@ -2633,10 +2749,22 @@ def build_zone_dataframe(
         else:
             row.update(
                 {
-                    "Shot":
+                    "Attempt":
                         format_rate(
-                            metrics["shot"],
+                            metrics["attempt"],
                             total,
+                        ),
+
+                    "Goal":
+                        format_rate(
+                            metrics["goal"],
+                            total,
+                        ),
+
+                    "Goal Conversion":
+                        format_rate(
+                            metrics["goal"],
+                            metrics["attempt"],
                         ),
 
                     "2nd Phase Attack":
@@ -2717,8 +2845,8 @@ def render_zone_effectiveness_chart(
                     metrics["fc_won"],
                 ),
                 (
-                    "Shot Conceded",
-                    metrics["shot"],
+                    "Attempt Conceded",
+                    metrics["attempt"],
                 ),
                 (
                     "2nd Phase",
@@ -2733,8 +2861,8 @@ def render_zone_effectiveness_chart(
                     metrics["fc_won"],
                 ),
                 (
-                    "Shot",
-                    metrics["shot"],
+                    "Attempt",
+                    metrics["attempt"],
                 ),
                 (
                     "2nd Phase",
@@ -2871,7 +2999,7 @@ def render_zone_table(
             "Zone",
             "Corners",
             "FC Won",
-            "Shot Conceded",
+            "Attempt Conceded",
             "2nd Phase",
             "Counter Launched",
         ]
@@ -2881,7 +3009,7 @@ def render_zone_table(
             "Zone",
             "Corners",
             "FC Won",
-            "Shot",
+            "Attempt",
             "2nd Phase Attack",
             "Counter Allowed",
         ]

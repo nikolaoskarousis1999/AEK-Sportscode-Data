@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from src.sportscode.mappings import (
     EVENT_CODE_MAP,
     GROUP_KEY_MAP,
+    normalize_group_value,
 )
 
 
@@ -137,22 +138,31 @@ def parse_sportscode_xml(
                 value_raw.strip()
             )
 
+            group_key = normalize_group_key(
+                normalized_group_raw
+            )
+
+            normalized_value = (
+                normalize_spaces(
+                    value_raw
+                )
+            )
+
             labels.append(
                 {
                     "group_name_raw":
                         normalized_group_raw,
 
                     "group_key":
-                        normalize_group_key(
-                            normalized_group_raw
-                        ),
+                        group_key,
 
                     "value_raw":
                         value_raw,
 
                     "value":
-                        normalize_spaces(
-                            value_raw
+                        normalize_group_value(
+                            group_key,
+                            normalized_value,
                         ),
 
                     "label_order":
