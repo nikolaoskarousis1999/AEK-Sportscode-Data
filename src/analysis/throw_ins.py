@@ -1,4 +1,50 @@
+from collections import Counter
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
+
+
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+KEEP_POSS = "KEEP POSS"
+LOSS_POSS = "LOSS POSS"
+
+FORWARD = "FORWARD"
+
+BOX_ENTRY = "BOX ENTRY"
+SWITCH_PLAY = "SWITCH PLAY"
+WIN_SET_PLAY = "WIN SP (TI,FK,CK)"
+CROSS_DECOY_RUNS = "CROSS/DECOY RUNS"
+
+
+# ============================================================
+# BASIC HELPERS
+# ============================================================
+
+def _as_list(value):
+    if value is None:
+        return []
+
+    if isinstance(value, list):
+        return value
+
+    return [value]
+
+
+def _normalize_text(value):
+    if value is None:
+        return ""
+
+    return " ".join(
+        str(value)
+        .strip()
+        .upper()
+        .split()
+    )
 
 
 def event_has_value(
@@ -6,57 +52,1579 @@ def event_has_value(
     key: str,
     target_value: str,
 ) -> bool:
-    value = record.get(key)
+    target = _normalize_text(
+        target_value
+    )
 
-    if value is None:
-        return False
+    for value in _as_list(
+        record.get(key)
+    ):
+        if (
+            _normalize_text(value)
+            == target
+        ):
+            return True
 
-    if isinstance(value, list):
-        return target_value in value
-
-    return value == target_value
+    return False
 
 
-def calculate_throw_in_kpi(
+def count_events_with_value(
     records: list[dict],
-) -> dict:
-    total_events = len(records)
-
-    retained_events = sum(
+    key: str,
+    target_value: str,
+) -> int:
+    return sum(
         1
         for record in records
         if event_has_value(
             record,
-            "retention",
-            "KEEP POSS",
+            key,
+            target_value,
         )
     )
 
-    percentage = (
-        retained_events / total_events * 100
-        if total_events
-        else 0
+
+def calculate_rate(
+    numerator: int,
+    denominator: int,
+) -> float:
+    if denominator == 0:
+        return 0.0
+
+    return (
+        numerator
+        / denominator
+        * 100
+    )
+
+
+def format_rate(
+    numerator: int,
+    denominator: int,
+) -> str:
+    if denominator == 0:
+        return "0% (0/0)"
+
+    return (
+        f"{calculate_rate(numerator, denominator):.0f}% "
+        f"({numerator}/{denominator})"
+    )
+
+
+# ============================================================
+# CATEGORY HELPERS
+# ============================================================
+
+def get_record_category_values(
+    record: dict,
+    key: str,
+    include_unknown: bool = False,
+) -> list[str]:
+    values = []
+    seen = set()
+
+    for raw_value in _as_list(
+        record.get(key)
+    ):
+        if raw_value is None:
+            continue
+
+        value = str(
+            raw_value
+        ).strip()
+
+        if not value:
+            continue
+
+        normalized = (
+            _normalize_text(value)
+        )
+
+        if normalized in seen:
+            continue
+
+        seen.add(
+            normalized
+        )
+
+        values.append(
+            value
+        )
+
+    if (
+        not values
+        and include_unknown
+    ):
+        return ["UNKNOWN"]
+
+    return values
+
+
+def count_categories(
+    records: list[dict],
+    key: str,
+    include_unknown: bool = False,
+) -> Counter:
+    counts = Counter()
+
+    for record in records:
+        values = (
+            get_record_category_values(
+                record,
+                key,
+                include_unknown,
+            )
+        )
+
+        for value in values:
+            counts[value] += 1
+
+    return counts
+
+
+def get_most_common_value(
+    records: list[dict],
+    key: str,
+    include_unknown: bool = False,
+) -> tuple[str, int]:
+    counts = count_categories(
+        records,
+        key,
+        include_unknown,
+    )
+
+    if not counts:
+        return "-", 0
+
+    return counts.most_common(1)[0]
+
+
+def records_with_category(
+    records: list[dict],
+    key: str,
+    category: str,
+) -> list[dict]:
+    return [
+        record
+        for record in records
+        if event_has_value(
+            record,
+            key,
+            category,
+        )
+    ]
+
+
+# ============================================================
+# RETENTION HELPERS
+# ============================================================
+
+def has_retention_label(
+    record: dict,
+) -> bool:
+    return bool(
+        get_record_category_values(
+            record,
+            "retention",
+        )
+    )
+
+
+def get_retention_coded_records(
+    records: list[dict],
+) -> list[dict]:
+    return [
+        record
+        for record in records
+        if has_retention_label(
+            record
+        )
+    ]
+
+
+def calculate_retention_metrics(
+    records: list[dict],
+) -> dict:
+    coded_records = (
+        get_retention_coded_records(
+            records
+        )
+    )
+
+    denominator = len(
+        coded_records
+    )
+
+    kept = (
+        count_events_with_value(
+            coded_records,
+            "retention",
+            KEEP_POSS,
+        )
+    )
+
+    lost = (
+        count_events_with_value(
+            coded_records,
+            "retention",
+            LOSS_POSS,
+        )
     )
 
     return {
-        "retained_events": retained_events,
-        "total_events": total_events,
-        "percentage": percentage,
+        "coded":
+            denominator,
+
+        "kept":
+            kept,
+
+        "lost":
+            lost,
+
+        "keep_rate":
+            calculate_rate(
+                kept,
+                denominator,
+            ),
+
+        "loss_rate":
+            calculate_rate(
+                lost,
+                denominator,
+            ),
     }
 
+
+# ============================================================
+# KPI CALCULATION
+# ============================================================
+
+def calculate_throw_in_kpis(
+    records: list[dict],
+) -> dict:
+    total = len(
+        records
+    )
+
+    retention = (
+        calculate_retention_metrics(
+            records
+        )
+    )
+
+    forward_records = (
+        records_with_category(
+            records,
+            "direction",
+            FORWARD,
+        )
+    )
+
+    forward = len(
+        forward_records
+    )
+
+    forward_retention = (
+        calculate_retention_metrics(
+            forward_records
+        )
+    )
+
+    box_entry = (
+        count_events_with_value(
+            records,
+            "result",
+            BOX_ENTRY,
+        )
+    )
+
+    win_set_play = (
+        count_events_with_value(
+            records,
+            "result",
+            WIN_SET_PLAY,
+        )
+    )
+
+    switch_play = (
+        count_events_with_value(
+            records,
+            "result",
+            SWITCH_PLAY,
+        )
+    )
+
+    cross_decoy = (
+        count_events_with_value(
+            records,
+            "result",
+            CROSS_DECOY_RUNS,
+        )
+    )
+
+    (
+        most_common_zone,
+        zone_count,
+    ) = get_most_common_value(
+        records,
+        "throw_in_zone",
+    )
+
+    (
+        most_common_length,
+        length_count,
+    ) = get_most_common_value(
+        records,
+        "length",
+    )
+
+    (
+        most_common_speed,
+        speed_count,
+    ) = get_most_common_value(
+        records,
+        "speed",
+    )
+
+    (
+        most_common_taker,
+        taker_count,
+    ) = get_most_common_value(
+        records,
+        "taker",
+        include_unknown=True,
+    )
+
+    return {
+        "total":
+            total,
+
+        "retention_coded":
+            retention["coded"],
+
+        "kept":
+            retention["kept"],
+
+        "lost":
+            retention["lost"],
+
+        "forward":
+            forward,
+
+        "forward_retention_coded":
+            forward_retention["coded"],
+
+        "forward_kept":
+            forward_retention["kept"],
+
+        "box_entry":
+            box_entry,
+
+        "win_set_play":
+            win_set_play,
+
+        "switch_play":
+            switch_play,
+
+        "cross_decoy":
+            cross_decoy,
+
+        "most_common_zone":
+            most_common_zone,
+
+        "zone_count":
+            zone_count,
+
+        "most_common_length":
+            most_common_length,
+
+        "length_count":
+            length_count,
+
+        "most_common_speed":
+            most_common_speed,
+
+        "speed_count":
+            speed_count,
+
+        "most_common_taker":
+            most_common_taker,
+
+        "taker_count":
+            taker_count,
+    }
+
+
+# ============================================================
+# RESULT BREAKDOWN
+# ============================================================
+
+def build_result_dataframe(
+    records: list[dict],
+) -> pd.DataFrame:
+    total = len(
+        records
+    )
+
+    counts = count_categories(
+        records,
+        "result",
+    )
+
+    rows = []
+
+    for (
+        result,
+        count,
+    ) in counts.items():
+        rows.append(
+            {
+                "Result":
+                    result,
+
+                "Count":
+                    count,
+
+                "Percentage":
+                    calculate_rate(
+                        count,
+                        total,
+                    ),
+
+                "Display":
+                    format_rate(
+                        count,
+                        total,
+                    ),
+            }
+        )
+
+    df = pd.DataFrame(
+        rows
+    )
+
+    if df.empty:
+        return df
+
+    return (
+        df
+        .sort_values(
+            "Percentage",
+            ascending=True,
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+def render_result_breakdown(
+    records: list[dict],
+):
+    st.markdown(
+        "### Result Breakdown"
+    )
+
+    df = build_result_dataframe(
+        records
+    )
+
+    if df.empty:
+        st.info(
+            "No RESULT data available "
+            "for the selected throw-ins."
+        )
+        return
+
+    fig = px.bar(
+        df,
+        x="Percentage",
+        y="Result",
+        orientation="h",
+        text="Display",
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+    )
+
+    fig.update_layout(
+        height=max(
+            280,
+            55 * len(df),
+        ),
+        margin=dict(
+            l=20,
+            r=130,
+            t=10,
+            b=20,
+        ),
+        xaxis_title=(
+            "Throw-in Rate (%)"
+        ),
+        yaxis_title="",
+        xaxis=dict(
+            range=[
+                0,
+                110,
+            ]
+        ),
+        showlegend=False,
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    st.caption(
+        "RESULT labels are not mutually exclusive. "
+        "One throw-in can contain more than one result, "
+        "so percentages do not need to total 100%."
+    )
+
+
+# ============================================================
+# RETENTION BY ZONE
+# ============================================================
+
+def build_retention_by_zone_dataframe(
+    records: list[dict],
+) -> pd.DataFrame:
+    zones = count_categories(
+        records,
+        "throw_in_zone",
+    )
+
+    rows = []
+
+    for zone in zones:
+        zone_records = (
+            records_with_category(
+                records,
+                "throw_in_zone",
+                zone,
+            )
+        )
+
+        retention = (
+            calculate_retention_metrics(
+                zone_records
+            )
+        )
+
+        coded = retention[
+            "coded"
+        ]
+
+        rows.append(
+            {
+                "Zone":
+                    zone,
+
+                "Throw-ins":
+                    len(
+                        zone_records
+                    ),
+
+                "Retention Coded":
+                    coded,
+
+                "Keep Count":
+                    retention[
+                        "kept"
+                    ],
+
+                "Loss Count":
+                    retention[
+                        "lost"
+                    ],
+
+                "Keep %":
+                    calculate_rate(
+                        retention["kept"],
+                        coded,
+                    ),
+
+                "Loss %":
+                    calculate_rate(
+                        retention["lost"],
+                        coded,
+                    ),
+
+                "Keep Possession":
+                    format_rate(
+                        retention["kept"],
+                        coded,
+                    ),
+
+                "Loss Possession":
+                    format_rate(
+                        retention["lost"],
+                        coded,
+                    ),
+            }
+        )
+
+    df = pd.DataFrame(
+        rows
+    )
+
+    if df.empty:
+        return df
+
+    return (
+        df
+        .sort_values(
+            [
+                "Throw-ins",
+                "Zone",
+            ],
+            ascending=[
+                False,
+                True,
+            ],
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+def render_retention_by_zone(
+    records: list[dict],
+):
+    st.markdown(
+        "### Retention by Zone"
+    )
+
+    df = (
+        build_retention_by_zone_dataframe(
+            records
+        )
+    )
+
+    if df.empty:
+        st.info(
+            "No throw-in zone data available."
+        )
+        return
+
+    fig = go.Figure()
+
+    fig.add_bar(
+        x=df["Zone"],
+        y=df["Keep %"],
+        name="Keep Possession",
+        text=[
+            format_rate(
+                int(row["Keep Count"]),
+                int(row["Retention Coded"]),
+            )
+            for _, row
+            in df.iterrows()
+        ],
+        textposition="inside",
+    )
+
+    fig.add_bar(
+        x=df["Zone"],
+        y=df["Loss %"],
+        name="Loss Possession",
+        text=[
+            format_rate(
+                int(row["Loss Count"]),
+                int(row["Retention Coded"]),
+            )
+            for _, row
+            in df.iterrows()
+        ],
+        textposition="inside",
+    )
+
+    fig.update_layout(
+        barmode="stack",
+        height=400,
+        margin=dict(
+            l=20,
+            r=20,
+            t=10,
+            b=20,
+        ),
+        xaxis_title="",
+        yaxis_title=(
+            "Retention Outcome (%)"
+        ),
+        yaxis=dict(
+            range=[
+                0,
+                100,
+            ]
+        ),
+        legend_title="",
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    st.caption(
+        "Retention percentages use only throw-ins "
+        "with a RETENTION label as the denominator."
+    )
+
+
+# ============================================================
+# EFFECTIVENESS DATA
+# ============================================================
+
+def build_effectiveness_dataframe(
+    records: list[dict],
+    group_key: str,
+    include_unknown: bool = False,
+) -> pd.DataFrame:
+    categories = count_categories(
+        records,
+        group_key,
+        include_unknown,
+    )
+
+    rows = []
+
+    for category in categories:
+        if category == "UNKNOWN":
+            category_records = [
+                record
+                for record in records
+                if not get_record_category_values(
+                    record,
+                    group_key,
+                )
+            ]
+
+        else:
+            category_records = (
+                records_with_category(
+                    records,
+                    group_key,
+                    category,
+                )
+            )
+
+        total = len(
+            category_records
+        )
+
+        retention = (
+            calculate_retention_metrics(
+                category_records
+            )
+        )
+
+        retention_coded = (
+            retention["coded"]
+        )
+
+        keep = retention[
+            "kept"
+        ]
+
+        loss = retention[
+            "lost"
+        ]
+
+        forward = (
+            count_events_with_value(
+                category_records,
+                "direction",
+                FORWARD,
+            )
+        )
+
+        box_entry = (
+            count_events_with_value(
+                category_records,
+                "result",
+                BOX_ENTRY,
+            )
+        )
+
+        win_sp = (
+            count_events_with_value(
+                category_records,
+                "result",
+                WIN_SET_PLAY,
+            )
+        )
+
+        switch_play = (
+            count_events_with_value(
+                category_records,
+                "result",
+                SWITCH_PLAY,
+            )
+        )
+
+        cross_decoy = (
+            count_events_with_value(
+                category_records,
+                "result",
+                CROSS_DECOY_RUNS,
+            )
+        )
+
+        fast = (
+            count_events_with_value(
+                category_records,
+                "speed",
+                "FAST",
+            )
+        )
+
+        rows.append(
+            {
+                "Category":
+                    category,
+
+                "Throw-ins":
+                    total,
+
+                "Retention Coded":
+                    retention_coded,
+
+                "Keep %":
+                    calculate_rate(
+                        keep,
+                        retention_coded,
+                    ),
+
+                "Keep Possession":
+                    format_rate(
+                        keep,
+                        retention_coded,
+                    ),
+
+                "Loss %":
+                    calculate_rate(
+                        loss,
+                        retention_coded,
+                    ),
+
+                "Loss Possession":
+                    format_rate(
+                        loss,
+                        retention_coded,
+                    ),
+
+                "Forward %":
+                    calculate_rate(
+                        forward,
+                        total,
+                    ),
+
+                "Forward":
+                    format_rate(
+                        forward,
+                        total,
+                    ),
+
+                "Box Entry %":
+                    calculate_rate(
+                        box_entry,
+                        total,
+                    ),
+
+                "Box Entry":
+                    format_rate(
+                        box_entry,
+                        total,
+                    ),
+
+                "Win SP %":
+                    calculate_rate(
+                        win_sp,
+                        total,
+                    ),
+
+                "Win SP":
+                    format_rate(
+                        win_sp,
+                        total,
+                    ),
+
+                "Switch Play %":
+                    calculate_rate(
+                        switch_play,
+                        total,
+                    ),
+
+                "Switch Play":
+                    format_rate(
+                        switch_play,
+                        total,
+                    ),
+
+                "Cross / Decoy Runs %":
+                    calculate_rate(
+                        cross_decoy,
+                        total,
+                    ),
+
+                "Cross / Decoy Runs":
+                    format_rate(
+                        cross_decoy,
+                        total,
+                    ),
+
+                "Fast %":
+                    calculate_rate(
+                        fast,
+                        total,
+                    ),
+
+                "Fast":
+                    format_rate(
+                        fast,
+                        total,
+                    ),
+            }
+        )
+
+    df = pd.DataFrame(
+        rows
+    )
+
+    if df.empty:
+        return df
+
+    return (
+        df
+        .sort_values(
+            [
+                "Throw-ins",
+                "Category",
+            ],
+            ascending=[
+                False,
+                True,
+            ],
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+
+# ============================================================
+# EFFECTIVENESS CHART
+# ============================================================
+
+def render_effectiveness_chart(
+    title: str,
+    df: pd.DataFrame,
+):
+    st.markdown(
+        f"#### {title}"
+    )
+
+    if df.empty:
+        st.info(
+            "No data available."
+        )
+        return
+
+    chart_df = df[
+        [
+            "Category",
+            "Keep %",
+            "Box Entry %",
+            "Win SP %",
+        ]
+    ].copy()
+
+    chart_long = (
+        chart_df
+        .melt(
+            id_vars=[
+                "Category"
+            ],
+            value_vars=[
+                "Keep %",
+                "Box Entry %",
+                "Win SP %",
+            ],
+            var_name="Metric",
+            value_name="Percentage",
+        )
+    )
+
+    chart_long[
+        "Metric"
+    ] = (
+        chart_long[
+            "Metric"
+        ]
+        .replace(
+            {
+                "Keep %":
+                    "Keep Possession",
+
+                "Box Entry %":
+                    "Box Entry",
+
+                "Win SP %":
+                    "Win Set Play",
+            }
+        )
+    )
+
+    fig = px.bar(
+        chart_long,
+        x="Category",
+        y="Percentage",
+        color="Metric",
+        barmode="group",
+    )
+
+    fig.update_layout(
+        height=390,
+        margin=dict(
+            l=20,
+            r=20,
+            t=10,
+            b=20,
+        ),
+        xaxis_title="",
+        yaxis_title=(
+            "Rate (%)"
+        ),
+        yaxis=dict(
+            range=[
+                0,
+                105,
+            ]
+        ),
+        legend_title="",
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    display_df = df[
+        [
+            "Category",
+            "Throw-ins",
+            "Keep Possession",
+            "Loss Possession",
+            "Forward",
+            "Box Entry",
+            "Win SP",
+            "Switch Play",
+        ]
+    ].copy()
+
+    display_df = display_df.rename(
+        columns={
+            "Win SP":
+                "Win Set Play",
+        }
+    )
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+
+# ============================================================
+# PLAYER COMPARISON
+# ============================================================
+
+def render_player_comparison(
+    records: list[dict],
+):
+    st.markdown(
+        "### Player Comparison"
+    )
+
+    df = (
+        build_effectiveness_dataframe(
+            records,
+            "taker",
+            include_unknown=True,
+        )
+    )
+
+    if df.empty:
+        st.info(
+            "No taker data available."
+        )
+        return
+
+    chart_df = df[
+        [
+            "Category",
+            "Keep %",
+            "Forward %",
+            "Box Entry %",
+            "Win SP %",
+        ]
+    ].copy()
+
+    chart_long = (
+        chart_df
+        .melt(
+            id_vars=[
+                "Category"
+            ],
+            value_vars=[
+                "Keep %",
+                "Forward %",
+                "Box Entry %",
+                "Win SP %",
+            ],
+            var_name="Metric",
+            value_name="Percentage",
+        )
+    )
+
+    chart_long[
+        "Metric"
+    ] = (
+        chart_long[
+            "Metric"
+        ]
+        .replace(
+            {
+                "Keep %":
+                    "Keep Possession",
+
+                "Forward %":
+                    "Forward",
+
+                "Box Entry %":
+                    "Box Entry",
+
+                "Win SP %":
+                    "Win Set Play",
+            }
+        )
+    )
+
+    fig = px.bar(
+        chart_long,
+        x="Category",
+        y="Percentage",
+        color="Metric",
+        barmode="group",
+    )
+
+    fig.update_layout(
+        height=420,
+        margin=dict(
+            l=20,
+            r=20,
+            t=10,
+            b=20,
+        ),
+        xaxis_title="Taker",
+        yaxis_title="Rate (%)",
+        yaxis=dict(
+            range=[
+                0,
+                105,
+            ]
+        ),
+        legend_title="",
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    table_df = df[
+        [
+            "Category",
+            "Throw-ins",
+            "Keep Possession",
+            "Loss Possession",
+            "Forward",
+            "Box Entry",
+            "Win SP",
+            "Switch Play",
+        ]
+    ].copy()
+
+    table_df = table_df.rename(
+        columns={
+            "Category":
+                "Taker",
+
+            "Win SP":
+                "Win Set Play",
+        }
+    )
+
+    st.dataframe(
+        table_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.caption(
+        "Use the Taker filter to turn the whole "
+        "dashboard into an individual player profile."
+    )
+
+
+# ============================================================
+# ZONE EFFECTIVENESS
+# ============================================================
+
+def render_zone_effectiveness(
+    records: list[dict],
+):
+    st.markdown(
+        "### Zone Effectiveness"
+    )
+
+    df = (
+        build_effectiveness_dataframe(
+            records,
+            "throw_in_zone",
+        )
+    )
+
+    if df.empty:
+        st.info(
+            "No throw-in zone data available."
+        )
+        return
+
+    df = df.rename(
+        columns={
+            "Category":
+                "Zone",
+        }
+    )
+
+    display_df = df[
+        [
+            "Zone",
+            "Throw-ins",
+            "Keep Possession",
+            "Loss Possession",
+            "Forward",
+            "Fast",
+            "Box Entry",
+            "Win SP",
+            "Switch Play",
+            "Cross / Decoy Runs",
+        ]
+    ].copy()
+
+    display_df = display_df.rename(
+        columns={
+            "Win SP":
+                "Win Set Play",
+        }
+    )
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+
+# ============================================================
+# MAIN RENDER
+# ============================================================
 
 def render_throw_in_analysis(
     analysis: dict,
 ):
-    kpi = calculate_throw_in_kpi(
-        analysis["records"]
+    records = analysis[
+        "records"
+    ]
+
+    if not records:
+        st.info(
+            "No throw-in events found "
+            "for the selected filters."
+        )
+        return
+
+    kpis = (
+        calculate_throw_in_kpis(
+            records
+        )
     )
 
-    st.metric(
-        label="Possession Retained",
-        value=f"{kpi['percentage']:.0f}%",
-        help=(
-            f"{kpi['retained_events']} of "
-            f"{kpi['total_events']} throw-in events."
-        ),
+    total = kpis[
+        "total"
+    ]
+
+    retention_denominator = (
+        kpis[
+            "retention_coded"
+        ]
+    )
+
+    forward_retention_denominator = (
+        kpis[
+            "forward_retention_coded"
+        ]
+    )
+
+    st.subheader(
+        "Throw-ins — Offensive"
+    )
+
+    # ========================================================
+    # KEY KPIs
+    # ========================================================
+
+    st.markdown(
+        "### Key KPIs"
+    )
+
+    col1, col2, col3, col4 = (
+        st.columns(4)
+    )
+
+    with col1:
+        st.metric(
+            "Total Throw-ins",
+            total,
+        )
+
+    with col2:
+        st.metric(
+            "Retention Rate",
+            format_rate(
+                kpis[
+                    "kept"
+                ],
+                retention_denominator,
+            ),
+        )
+
+    with col3:
+        st.metric(
+            "Forward Throw Rate",
+            format_rate(
+                kpis[
+                    "forward"
+                ],
+                total,
+            ),
+        )
+
+    with col4:
+        st.metric(
+            "Forward Retention",
+            format_rate(
+                kpis[
+                    "forward_kept"
+                ],
+                forward_retention_denominator,
+            ),
+            help=(
+                "Keep Possession rate for "
+                "throw-ins coded FORWARD."
+            ),
+        )
+
+    col5, col6, col7, col8 = (
+        st.columns(4)
+    )
+
+    with col5:
+        st.metric(
+            "Box Entry Rate",
+            format_rate(
+                kpis[
+                    "box_entry"
+                ],
+                total,
+            ),
+        )
+
+    with col6:
+        st.metric(
+            "Set Play Won",
+            format_rate(
+                kpis[
+                    "win_set_play"
+                ],
+                total,
+            ),
+        )
+
+    with col7:
+        st.metric(
+            "Most Common Zone",
+            kpis[
+                "most_common_zone"
+            ],
+            help=(
+                f"{kpis['zone_count']}/{total} "
+                f"throw-ins"
+            ),
+        )
+
+    with col8:
+        st.metric(
+            "Most Common Taker",
+            kpis[
+                "most_common_taker"
+            ],
+            help=(
+                f"{kpis['taker_count']}/{total} "
+                f"throw-ins"
+            ),
+        )
+
+    col9, col10 = (
+        st.columns(2)
+    )
+
+    with col9:
+        st.metric(
+            "Most Common Length",
+            kpis[
+                "most_common_length"
+            ],
+            help=(
+                f"{kpis['length_count']}/{total} "
+                f"throw-ins"
+            ),
+        )
+
+    with col10:
+        st.metric(
+            "Most Common Speed",
+            kpis[
+                "most_common_speed"
+            ],
+            help=(
+                f"{kpis['speed_count']}/{total} "
+                f"throw-ins"
+            ),
+        )
+
+    if (
+        retention_denominator
+        < total
+    ):
+        st.caption(
+            f"Retention is coded for "
+            f"{retention_denominator}/{total} "
+            f"of the currently filtered throw-ins."
+        )
+
+    # ========================================================
+    # RESULT BREAKDOWN
+    # ========================================================
+
+    st.markdown("---")
+
+    render_result_breakdown(
+        records
+    )
+
+    # ========================================================
+    # RETENTION BY ZONE
+    # ========================================================
+
+    st.markdown("---")
+
+    render_retention_by_zone(
+        records
+    )
+
+    # ========================================================
+    # EXECUTION EFFECTIVENESS
+    # ========================================================
+
+    st.markdown("---")
+
+    st.markdown(
+        "### Execution Effectiveness"
+    )
+
+    direction_df = (
+        build_effectiveness_dataframe(
+            records,
+            "direction",
+        )
+    )
+
+    speed_df = (
+        build_effectiveness_dataframe(
+            records,
+            "speed",
+        )
+    )
+
+    length_df = (
+        build_effectiveness_dataframe(
+            records,
+            "length",
+        )
+    )
+
+    tab1, tab2, tab3 = (
+        st.tabs(
+            [
+                "Direction",
+                "Speed",
+                "Length",
+            ]
+        )
+    )
+
+    with tab1:
+        render_effectiveness_chart(
+            "Direction Effectiveness",
+            direction_df,
+        )
+
+    with tab2:
+        render_effectiveness_chart(
+            "Speed Effectiveness",
+            speed_df,
+        )
+
+    with tab3:
+        render_effectiveness_chart(
+            "Length Effectiveness",
+            length_df,
+        )
+
+    # ========================================================
+    # PLAYER ANALYSIS
+    # ========================================================
+
+    st.markdown("---")
+
+    render_player_comparison(
+        records
+    )
+
+    # ========================================================
+    # ZONE EFFECTIVENESS
+    # ========================================================
+
+    st.markdown("---")
+
+    render_zone_effectiveness(
+        records
     )

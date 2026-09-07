@@ -1,16 +1,15 @@
-from src.data.supabase_client import (
-    get_supabase_client,
-)
+from src.data.supabase_client import get_supabase_client
+
+
+supabase = get_supabase_client()
 
 
 def load_competitions() -> list[dict]:
-    supabase = get_supabase_client()
-
     response = (
         supabase
         .table("competitions")
-        .select("id,name")
-        .order("id")
+        .select("*")
+        .order("name")
         .execute()
     )
 
@@ -20,27 +19,27 @@ def load_competitions() -> list[dict]:
 def load_matches(
     competition_id: int,
 ) -> list[dict]:
-    supabase = get_supabase_client()
-
     response = (
         supabase
         .table("matches")
-        .select(
-            "id,"
-            "competition_id,"
-            "match_date,"
-            "opponent,"
-            "venue,"
-            "aek_score,"
-            "opponent_score"
-        )
+        .select("*")
         .eq(
             "competition_id",
             competition_id,
         )
-        .order(
-            "id"
-        )
+        .order("match_date")
+        .execute()
+    )
+
+    return response.data
+
+
+def load_matches_all() -> list[dict]:
+    response = (
+        supabase
+        .table("matches")
+        .select("*")
+        .order("match_date")
         .execute()
     )
 
@@ -52,35 +51,62 @@ def load_events(
     event_family: str | None = None,
     phase: str | None = None,
 ) -> list[dict]:
-    supabase = get_supabase_client()
-
     query = (
         supabase
         .table("sportscode_events")
-        .select(
-            "id,"
-            "match_id,"
-            "import_id,"
-            "source_instance_id,"
-            "code,"
-            "event_family,"
-            "phase,"
-            "start_seconds,"
-            "end_seconds"
-        )
+        .select("*")
         .eq(
             "match_id",
             match_id,
         )
     )
 
-    if event_family:
+    if event_family is not None:
         query = query.eq(
             "event_family",
             event_family,
         )
 
-    if phase:
+    if phase is not None:
+        query = query.eq(
+            "phase",
+            phase,
+        )
+
+    response = (
+        query
+        .order("start_seconds")
+        .execute()
+    )
+
+    return response.data
+
+
+def load_events_for_matches(
+    match_ids: list[int],
+    event_family: str | None = None,
+    phase: str | None = None,
+) -> list[dict]:
+    if not match_ids:
+        return []
+
+    query = (
+        supabase
+        .table("sportscode_events")
+        .select("*")
+        .in_(
+            "match_id",
+            match_ids,
+        )
+    )
+
+    if event_family is not None:
+        query = query.eq(
+            "event_family",
+            event_family,
+        )
+
+    if phase is not None:
         query = query.eq(
             "phase",
             phase,
@@ -101,20 +127,10 @@ def load_event_labels(
     if not event_ids:
         return []
 
-    supabase = get_supabase_client()
-
     response = (
         supabase
         .table("sportscode_event_labels")
-        .select(
-            "id,"
-            "event_id,"
-            "group_name_raw,"
-            "group_key,"
-            "value_raw,"
-            "value,"
-            "label_order"
-        )
+        .select("*")
         .in_(
             "event_id",
             event_ids,
@@ -129,8 +145,8 @@ def load_event_labels(
 
 def load_sportscode_data(
     match_id: int,
-    event_family: str,
-    phase: str,
+    event_family: str | None = None,
+    phase: str | None = None,
 ) -> tuple[list[dict], list[dict]]:
     events = load_events(
         match_id=match_id,
