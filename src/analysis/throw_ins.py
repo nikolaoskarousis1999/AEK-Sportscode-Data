@@ -20,6 +20,13 @@ SWITCH_PLAY = "SWITCH PLAY"
 WIN_SET_PLAY = "WIN SP (TI,FK,CK)"
 CROSS_DECOY_RUNS = "CROSS/DECOY RUNS"
 
+THROW_IN_ZONE_ORDER = [
+    "DEF ZONE",
+    "PRE-DEF ZONE",
+    "PRE-OFF ZONE",
+    "OFF ZONE",
+]
+
 
 # ============================================================
 # BASIC HELPERS
@@ -597,15 +604,34 @@ def build_retention_by_zone_dataframe(
         "throw_in_zone",
     )
 
+    ordered_zones = [
+        zone
+        for zone in THROW_IN_ZONE_ORDER
+        if zone in zones
+    ]
+
+    unexpected_zones = sorted(
+        zone
+        for zone in zones
+        if zone not in THROW_IN_ZONE_ORDER
+    )
+
     rows = []
 
-    for zone in zones:
+    for zone in [
+        *ordered_zones,
+        *unexpected_zones,
+    ]:
         zone_records = (
             records_with_category(
                 records,
                 "throw_in_zone",
                 zone,
             )
+        )
+
+        total_throw_ins = len(
+            zone_records
         )
 
         retention = (
@@ -618,15 +644,21 @@ def build_retention_by_zone_dataframe(
             "coded"
         ]
 
+        box_entry_count = (
+            count_events_with_value(
+                zone_records,
+                "result",
+                BOX_ENTRY,
+            )
+        )
+
         rows.append(
             {
                 "Zone":
                     zone,
 
                 "Throw-ins":
-                    len(
-                        zone_records
-                    ),
+                    total_throw_ins,
 
                 "Retention Coded":
                     coded,
@@ -664,31 +696,26 @@ def build_retention_by_zone_dataframe(
                         retention["lost"],
                         coded,
                     ),
+
+                "Box Entry Count":
+                    box_entry_count,
+
+                "Box Entry %":
+                    calculate_rate(
+                        box_entry_count,
+                        total_throw_ins,
+                    ),
+
+                "Box Entry":
+                    format_rate(
+                        box_entry_count,
+                        total_throw_ins,
+                    ),
             }
         )
 
-    df = pd.DataFrame(
+    return pd.DataFrame(
         rows
-    )
-
-    if df.empty:
-        return df
-
-    return (
-        df
-        .sort_values(
-            [
-                "Throw-ins",
-                "Zone",
-            ],
-            ascending=[
-                False,
-                True,
-            ],
-        )
-        .reset_index(
-            drop=True
-        )
     )
 
 
@@ -713,42 +740,98 @@ def render_retention_by_zone(
 
     fig = go.Figure()
 
+    keep_display = [
+        format_rate(
+            int(row["Keep Count"]),
+            int(row["Retention Coded"]),
+        )
+        for _, row
+        in df.iterrows()
+    ]
+
     fig.add_bar(
         x=df["Zone"],
         y=df["Keep %"],
         name="Keep Possession",
-        text=[
-            format_rate(
-                int(row["Keep Count"]),
-                int(row["Retention Coded"]),
-            )
-            for _, row
-            in df.iterrows()
-        ],
+        text=keep_display,
         textposition="inside",
+        customdata=keep_display,
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Keep Possession: %{customdata}"
+            "<extra></extra>"
+        ),
     )
+
+    loss_display = [
+        format_rate(
+            int(row["Loss Count"]),
+            int(row["Retention Coded"]),
+        )
+        for _, row
+        in df.iterrows()
+    ]
 
     fig.add_bar(
         x=df["Zone"],
         y=df["Loss %"],
         name="Loss Possession",
-        text=[
-            format_rate(
-                int(row["Loss Count"]),
-                int(row["Retention Coded"]),
-            )
-            for _, row
-            in df.iterrows()
-        ],
+        text=loss_display,
         textposition="inside",
+        customdata=loss_display,
+        hovertemplate=(
+            "<b>%{x}</b><br>"
+            "Loss Possession: %{customdata}"
+            "<extra></extra>"
+        ),
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["Zone"],
+            y=df["Box Entry %"],
+            mode="lines+markers+text",
+            name="Box Entry",
+            text=[
+                format_rate(
+                    int(row["Box Entry Count"]),
+                    int(row["Throw-ins"]),
+                )
+                for _, row
+                in df.iterrows()
+            ],
+            textposition="top center",
+            textfont=dict(
+                size=14,
+                color="white",
+            ),
+            line=dict(
+                width=5,
+                color="#FFD54F",
+            ),
+            marker=dict(
+                size=12,
+                color="#FFD54F",
+                line=dict(
+                    width=2,
+                    color="white",
+                ),
+            ),
+            yaxis="y2",
+            hovertemplate=(
+                "<b>%{x}</b><br>"
+                "Box Entry: %{text}"
+                "<extra></extra>"
+            ),
+        )
     )
 
     fig.update_layout(
         barmode="stack",
-        height=400,
+        height=430,
         margin=dict(
             l=20,
-            r=20,
+            r=150,
             t=10,
             b=20,
         ),
@@ -762,7 +845,32 @@ def render_retention_by_zone(
                 100,
             ]
         ),
+        yaxis2=dict(
+            title=dict(
+                text="Box Entry Rate (%)",
+                font=dict(
+                    color="#FFD54F",
+                ),
+            ),
+            range=[
+                0,
+                100,
+            ],
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            tickfont=dict(
+                color="#FFD54F",
+            ),
+        ),
         legend_title="",
+        legend=dict(
+            x=1.08,
+            xanchor="left",
+            y=1.0,
+            yanchor="top",
+            bgcolor="rgba(0,0,0,0.35)",
+        ),
     )
 
     st.plotly_chart(
@@ -772,7 +880,9 @@ def render_retention_by_zone(
 
     st.caption(
         "Retention percentages use only throw-ins "
-        "with a RETENTION label as the denominator."
+        "with a RETENTION label as the denominator. "
+        "Box Entry rate uses all throw-ins in each zone "
+        "as the denominator."
     )
 
 

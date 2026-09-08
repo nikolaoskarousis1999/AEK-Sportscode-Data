@@ -21,6 +21,7 @@ from src.analysis import final_attempts
 from src.data.data_loader import (
     load_competitions,
     load_matches,
+    load_matches_all,
 )
 
 from src.filters.sportscode_filters import (
@@ -234,6 +235,139 @@ selected_scope = (
 
 selected_competition_id = None
 selected_match_id = None
+selected_match_ids = None
+
+
+if selected_scope == "All Matches Analysis":
+    all_matches = (
+        load_matches_all()
+    )
+
+    if not all_matches:
+        st.warning(
+            "No matches found."
+        )
+        st.stop()
+
+    all_match_options = {
+        format_match(match):
+            match["id"]
+        for match
+        in all_matches
+        if match.get(
+            "id"
+        ) is not None
+    }
+
+    all_matches_label = "ALL MATCHES"
+
+    # Keep ALL MATCHES mutually exclusive with specific matches.
+    #
+    # Behaviour:
+    # - default = ALL MATCHES
+    # - selecting a specific match removes ALL MATCHES
+    # - selecting ALL MATCHES after specific matches clears them
+    if "all_matches_selected" not in st.session_state:
+        st.session_state[
+            "all_matches_selected"
+        ] = [
+            all_matches_label
+        ]
+
+    if "_all_matches_previous" not in st.session_state:
+        st.session_state[
+            "_all_matches_previous"
+        ] = list(
+            st.session_state[
+                "all_matches_selected"
+            ]
+        )
+
+    def sync_all_matches_selection():
+        current = list(
+            st.session_state.get(
+                "all_matches_selected",
+                [],
+            )
+        )
+
+        previous = list(
+            st.session_state.get(
+                "_all_matches_previous",
+                [],
+            )
+        )
+
+        if (
+            all_matches_label in current
+            and len(current) > 1
+        ):
+            # If ALL MATCHES was newly selected,
+            # clear every specific match.
+            if (
+                all_matches_label
+                not in previous
+            ):
+                current = [
+                    all_matches_label
+                ]
+
+            # If a specific match was newly selected while
+            # ALL MATCHES was active, remove ALL MATCHES.
+            else:
+                current = [
+                    match_name
+                    for match_name in current
+                    if match_name
+                    != all_matches_label
+                ]
+
+        st.session_state[
+            "all_matches_selected"
+        ] = current
+
+        st.session_state[
+            "_all_matches_previous"
+        ] = list(
+            current
+        )
+
+    selected_match_names = (
+        st.sidebar.multiselect(
+            "Select Matches",
+            [
+                all_matches_label,
+                *list(
+                    all_match_options.keys()
+                ),
+            ],
+            key="all_matches_selected",
+            on_change=sync_all_matches_selection,
+        )
+    )
+
+    # ALL MATCHES keeps the original All Matches Analysis behaviour.
+    if selected_match_names == [
+        all_matches_label
+    ]:
+        selected_match_ids = None
+
+    # If ALL MATCHES is removed and no specific match is selected,
+    # analyse nothing. Do not fall back to the previous/all-matches data.
+    elif not selected_match_names:
+        selected_match_ids = []
+
+    else:
+        # Any combination of specific matches is allowed.
+        selected_match_ids = [
+            all_match_options[
+                match_name
+            ]
+            for match_name
+            in selected_match_names
+            if match_name
+            in all_match_options
+        ]
 
 
 if selected_scope in [
@@ -313,6 +447,13 @@ if selected_scope == "Match Analysis":
     )
 
 
+if (
+    selected_scope == "All Matches Analysis"
+    and selected_match_ids == []
+):
+    st.stop()
+
+
 # ============================================================
 # SIDEBAR - ANALYSIS TYPE
 # ============================================================
@@ -379,6 +520,9 @@ analysis = (
         ),
         competition_id=(
             selected_competition_id
+        ),
+        match_ids=(
+            selected_match_ids
         ),
     )
 )

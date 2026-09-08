@@ -516,6 +516,7 @@ def load_analysis_scope(
     phase: str,
     match_id=None,
     competition_id=None,
+    match_ids=None,
 ) -> dict:
     """
     Supported scopes:
@@ -601,17 +602,29 @@ def load_analysis_scope(
 
     if scope == "All Matches Analysis":
 
-        matches = (
-            load_matches_all()
-        )
+        # Preserve the original behaviour:
+        # match_ids=None means analyse every available match.
+        if match_ids is None:
 
-        match_ids = [
-            match["id"]
-            for match in matches
-            if match.get(
-                "id"
-            ) is not None
-        ]
+            matches = (
+                load_matches_all()
+            )
+
+            match_ids = [
+                match["id"]
+                for match in matches
+                if match.get(
+                    "id"
+                ) is not None
+            ]
+
+        else:
+
+            match_ids = [
+                selected_match_id
+                for selected_match_id in match_ids
+                if selected_match_id is not None
+            ]
 
         if not match_ids:
 
