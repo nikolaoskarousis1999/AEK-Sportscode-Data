@@ -33,6 +33,14 @@ from src.ui.header import (
     render_header,
 )
 
+from src.reports.report_context import (
+    build_report_context,
+)
+
+from src.reports.report_state import (
+    clear_all_reports,
+)
+
 
 # ============================================================
 # PAGE CONFIG
@@ -177,6 +185,7 @@ def render_final_attempt_module(
     analysis: dict,
     phase: str,
     analysis_scope: str | None = None,
+    report_context: dict | None = None,
 ):
     if hasattr(
         final_attempts,
@@ -208,6 +217,7 @@ def render_final_attempt_module(
             analysis,
             phase,
             analysis_scope,
+            report_context=report_context,
         )
 
     except TypeError:
@@ -236,6 +246,9 @@ selected_scope = (
 selected_competition_id = None
 selected_match_id = None
 selected_match_ids = None
+selected_competition_name = None
+selected_match_name = None
+selected_match_names = []
 
 
 if selected_scope == "All Matches Analysis":
@@ -476,6 +489,36 @@ selected_event_family = (
 
 
 # ============================================================
+# REPORT RESET WHEN ANALYSIS CATEGORY CHANGES
+# ============================================================
+
+previous_report_family = (
+    st.session_state.get(
+        "_previous_report_event_family"
+    )
+)
+
+if previous_report_family is None:
+    st.session_state[
+        "_previous_report_event_family"
+    ] = selected_event_family
+
+elif (
+    previous_report_family
+    != selected_event_family
+):
+    # Reports are intentionally temporary per analysis category.
+    # Switching Corner Kicks -> Free Kicks, Throw-Ins, etc.
+    # clears every report basket so returning to the old category
+    # always starts clean.
+    clear_all_reports()
+
+    st.session_state[
+        "_previous_report_event_family"
+    ] = selected_event_family
+
+
+# ============================================================
 # SIDEBAR - PHASE
 # ============================================================
 
@@ -502,6 +545,32 @@ else:
     selected_phase = (
         phase_name.lower()
     )
+
+
+# ============================================================
+# REPORT RESET WHEN PHASE CHANGES
+# ============================================================
+
+previous_report_phase = (
+    st.session_state.get(
+        "_previous_report_phase"
+    )
+)
+
+if previous_report_phase is None:
+    st.session_state[
+        "_previous_report_phase"
+    ] = selected_phase
+
+elif (
+    previous_report_phase
+    != selected_phase
+):
+    clear_all_reports()
+
+    st.session_state[
+        "_previous_report_phase"
+    ] = selected_phase
 
 
 # ============================================================
@@ -1076,6 +1145,76 @@ filtered_analysis = {
         filtered_records,
 }
 
+# ============================================================
+# REPORT RESET WHEN ANALYSIS CONTEXT / FILTERS CHANGE
+# ============================================================
+
+current_report_context_signature = (
+    selected_scope,
+    selected_event_family,
+    selected_phase,
+    selected_competition_id,
+    selected_match_id,
+    tuple(
+        sorted(
+            selected_match_ids
+        )
+    )
+    if isinstance(
+        selected_match_ids,
+        list,
+    )
+    else selected_match_ids,
+    tuple(
+        sorted(
+            (
+                key,
+                tuple(value)
+                if isinstance(
+                    value,
+                    list,
+                )
+                else value,
+            )
+            for key, value
+            in active_filters.items()
+        )
+    ),
+)
+
+previous_report_context_signature = (
+    st.session_state.get(
+        "_previous_report_context_signature"
+    )
+)
+
+if previous_report_context_signature is None:
+    st.session_state[
+        "_previous_report_context_signature"
+    ] = current_report_context_signature
+
+elif (
+    previous_report_context_signature
+    != current_report_context_signature
+):
+    clear_all_reports()
+
+    st.session_state[
+        "_previous_report_context_signature"
+    ] = current_report_context_signature
+
+
+report_context = build_report_context(
+    event_family=selected_event_family,
+    analysis_name=selected_analysis_name,
+    scope=selected_scope,
+    phase=selected_phase,
+    competition=selected_competition_name,
+    match=selected_match_name,
+    matches=selected_match_names,
+    filters=active_filters,
+)
+
 
 # ============================================================
 # SIDEBAR SUMMARY
@@ -1115,6 +1254,7 @@ if (
         filtered_analysis,
         selected_phase,
         selected_scope,
+        report_context=report_context,
     )
 
 elif (
@@ -1125,6 +1265,7 @@ elif (
         filtered_analysis,
         selected_phase,
         selected_scope,
+        report_context=report_context,
     )
 
 elif (
@@ -1132,7 +1273,8 @@ elif (
     == "throw_in"
 ):
     render_throw_in_analysis(
-        filtered_analysis
+        filtered_analysis,
+        report_context=report_context,
     )
 
 elif (
@@ -1143,4 +1285,5 @@ elif (
         filtered_analysis,
         selected_phase,
         selected_scope,
+        report_context=report_context,
     )

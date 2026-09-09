@@ -4,6 +4,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.reports.report_items import (
+    create_image_report_item,
+    create_kpi_report_item,
+    create_plotly_report_item,
+    create_table_report_item,
+)
+
+from src.reports.report_ui import (
+    render_add_to_report_button,
+    render_create_report_button,
+)
+
 FC_WON = "1ST CONTACT WON"
 FC_LOST = "1ST CONTACT LOST"
 SHOT = "SHOT"
@@ -202,7 +214,11 @@ def get_free_kick_metrics(records, phase):
     }
 
 
-def render_kpis(records, phase):
+def render_kpis(
+    records,
+    phase,
+    report_context: dict | None = None,
+):
     m = get_free_kick_metrics(records, phase)
     total = m["total"]
     delivery_type, delivery_count = most_common(records, "delivery_type")
@@ -253,6 +269,37 @@ def render_kpis(records, phase):
         for col, (label, value, help_text) in zip(cols, row):
             with col:
                 st.metric(label, value, help=help_text)
+
+    if report_context is not None:
+        kpi_items = []
+
+        for row in rows:
+            for (
+                label,
+                value,
+                _help_text,
+            ) in row:
+                kpi_items.append(
+                    {
+                        "label": label,
+                        "value": value,
+                    }
+                )
+
+        report_item = create_kpi_report_item(
+            module="free_kick",
+            section_title="Key KPIs",
+            kpis=kpi_items,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_kpis_"
+                f"{report_item['id']}"
+            ),
+        )
 
 
 
@@ -553,6 +600,7 @@ def _numbered_zone_panel(
 
 def render_zone_visualisation(
     records,
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Zone Visualisation"
@@ -1035,6 +1083,25 @@ body {{
         height=395,
     )
 
+    if report_context is not None:
+        report_item = create_image_report_item(
+            module="free_kick",
+            section_title="Zone Visualisation",
+            html=html,
+            context=report_context,
+            width_px=1400,
+            height_px=395,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_zone_visualisation_"
+                f"{report_item['id']}"
+            ),
+        )
+
+
 def build_outcome_dataframe(records):
     total = len(records)
     rows = []
@@ -1051,7 +1118,10 @@ def build_outcome_dataframe(records):
     return df.sort_values("Percentage", ascending=True).reset_index(drop=True)
 
 
-def render_outcome_breakdown(records):
+def render_outcome_breakdown(
+    records,
+    report_context: dict | None = None,
+):
     st.markdown("### Outcome Breakdown")
     df = build_outcome_dataframe(records)
     if df.empty:
@@ -1088,6 +1158,22 @@ def render_outcome_breakdown(records):
         "Attempt = SHOT OR GOAL for offensive free kicks. "
         "Attempt Conceded = SHOT CONCEDED OR GOAL CONCEDED for defensive free kicks."
     )
+
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="free_kick",
+            section_title="Outcome Breakdown",
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_outcome_"
+                f"{report_item['id']}"
+            ),
+        )
 
 
 def build_effectiveness_dataframe(records, group_key, phase, include_unknown=False, first_contact_table=False):
@@ -1129,7 +1215,11 @@ def build_effectiveness_dataframe(records, group_key, phase, include_unknown=Fal
     return df.sort_values("Free Kicks", ascending=False).reset_index(drop=True)
 
 
-def render_first_contact_chart(records, phase):
+def render_first_contact_chart(
+    records,
+    phase,
+    report_context: dict | None = None,
+):
     rows = []
     for category in [FC_LOST, FC_WON]:
         category_records = records_with_category(records, "first_contact", category)
@@ -1186,10 +1276,27 @@ def render_first_contact_chart(records, phase):
     )
     st.plotly_chart(fig, width="stretch")
 
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="free_kick",
+            section_title="First Contact → Outcome",
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_first_contact_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 def render_delivery_type_scatter(
     records,
     phase,
+    report_context: dict | None = None,
 ):
     rows = []
 
@@ -1445,7 +1552,37 @@ def render_delivery_type_scatter(
             },
         )
 
-def render_effectiveness_table(title, records, group_key, phase, category_name, include_unknown=False, first_contact_table=False, show_title=True):
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="free_kick",
+            section_title=(
+                "Delivery Type Effectiveness — Scatter"
+            ),
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_delivery_scatter_"
+                f"{report_item['id']}"
+            ),
+        )
+
+
+def render_effectiveness_table(
+    title,
+    records,
+    group_key,
+    phase,
+    category_name,
+    include_unknown=False,
+    first_contact_table=False,
+    show_title=True,
+    report_context: dict | None = None,
+    report_section_title: str | None = None,
+):
     if show_title:
         st.markdown(f"#### {title}")
 
@@ -1489,15 +1626,52 @@ def render_effectiveness_table(title, records, group_key, phase, category_name, 
         },
     )
 
+    if report_context is not None:
+        section_title = (
+            report_section_title
+            or title
+            or f"{category_name} Effectiveness"
+        )
 
-def render_effectiveness(records, phase, analysis_scope: str | None = None):
+        report_item = create_table_report_item(
+            module="free_kick",
+            section_title=section_title,
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_effectiveness_table_"
+                f"{group_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
+
+def render_effectiveness(
+    records,
+    phase,
+    analysis_scope: str | None = None,
+    report_context: dict | None = None,
+):
     st.markdown("### Effectiveness")
 
     st.markdown("#### First Contact → Outcome")
-    render_first_contact_chart(records, phase)
+    render_first_contact_chart(
+        records,
+        phase,
+        report_context=report_context,
+    )
     render_effectiveness_table(
         "", records, "first_contact", phase, "First Contact",
-        first_contact_table=True, show_title=False,
+        first_contact_table=True,
+        show_title=False,
+        report_context=report_context,
+        report_section_title=(
+            "First Contact Effectiveness — Table"
+        ),
     )
 
     st.write("")
@@ -1510,36 +1684,64 @@ def render_effectiveness(records, phase, analysis_scope: str | None = None):
         render_delivery_type_scatter(
             records,
             phase,
+            report_context=report_context,
         )
 
     render_effectiveness_table(
-        "", records, "delivery_type", phase, "Delivery Type",
+        "",
+        records,
+        "delivery_type",
+        phase,
+        "Delivery Type",
         show_title=False,
+        report_context=report_context,
+        report_section_title=(
+            "Delivery Type Effectiveness — Table"
+        ),
     )
 
     st.write("")
     if phase == "offensive":
         render_effectiveness_table(
-            "Taker Effectiveness", records, "taker", phase, "Taker",
+            "Taker Effectiveness",
+            records,
+            "taker",
+            phase,
+            "Taker",
             include_unknown=True,
+            report_context=report_context,
         )
     else:
         render_effectiveness_table(
-            "Opponent Players Effectiveness", records, "opponent_players", phase,
-            "Opponent Players", include_unknown=True,
+            "Opponent Players Effectiveness",
+            records,
+            "opponent_players",
+            phase,
+            "Opponent Players",
+            include_unknown=True,
+            report_context=report_context,
         )
 
     st.write("")
     render_effectiveness_table(
-        "Side Effectiveness", records, "side", phase, "Side"
+        "Side Effectiveness",
+        records,
+        "side",
+        phase,
+        "Side",
+        report_context=report_context,
     )
 
     if phase == "offensive":
         st.write("")
         st.markdown("#### Opponent Context")
         render_effectiveness_table(
-            "Opponent Organization", records, "opponent_organization", phase,
             "Opponent Organization",
+            records,
+            "opponent_organization",
+            phase,
+            "Opponent Organization",
+            report_context=report_context,
         )
 
 
@@ -1580,7 +1782,12 @@ def build_zone_dataframe(records, zone_key, phase):
     return df.sort_values("Free Kicks", ascending=False).reset_index(drop=True)
 
 
-def render_zone_effectiveness_chart(records, zone_key, phase):
+def render_zone_effectiveness_chart(
+    records,
+    zone_key,
+    phase,
+    report_context: dict | None = None,
+):
     rows = []
     for zone in category_counts(records, zone_key):
         zone_records = records_with_category(records, zone_key, zone)
@@ -1634,8 +1841,45 @@ def render_zone_effectiveness_chart(records, zone_key, phase):
     )
     st.plotly_chart(fig, width="stretch")
 
+    if report_context is not None:
+        zone_label = (
+            "Origin Zone"
+            if zone_key == "origin_zone"
+            else (
+                "Delivery Zone"
+                if zone_key == "delivery_zone"
+                else "Finishing Zone"
+            )
+        )
 
-def render_zone_table(title, records, zone_key, phase, show_title=True):
+        report_item = create_plotly_report_item(
+            module="free_kick",
+            section_title=(
+                f"{zone_label} Effectiveness"
+            ),
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_zone_chart_"
+                f"{zone_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
+
+def render_zone_table(
+    title,
+    records,
+    zone_key,
+    phase,
+    show_title=True,
+    report_context: dict | None = None,
+    report_section_title: str | None = None,
+):
     if show_title:
         st.markdown(f"#### {title}")
 
@@ -1667,22 +1911,87 @@ def render_zone_table(title, records, zone_key, phase, show_title=True):
         },
     )
 
+    if report_context is not None:
+        section_title = (
+            report_section_title
+            or title
+            or (
+                "Origin Zone Summary"
+                if zone_key == "origin_zone"
+                else (
+                    "Delivery Zone Summary"
+                    if zone_key == "delivery_zone"
+                    else "Finishing Zone Summary"
+                )
+            )
+        )
 
-def render_zone_effectiveness(records, phase):
+        report_item = create_table_report_item(
+            module="free_kick",
+            section_title=section_title,
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_free_kick_zone_table_"
+                f"{zone_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
+
+def render_zone_effectiveness(
+    records,
+    phase,
+    report_context: dict | None = None,
+):
     st.markdown("### Zone Effectiveness")
 
     st.markdown("#### Origin Zone Summary")
-    render_zone_effectiveness_chart(records, "origin_zone", phase)
-    render_zone_table("", records, "origin_zone", phase, show_title=False)
+    render_zone_effectiveness_chart(
+        records,
+        "origin_zone",
+        phase,
+        report_context=report_context,
+    )
+    render_zone_table(
+        "",
+        records,
+        "origin_zone",
+        phase,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Origin Zone Summary",
+    )
 
     st.write("")
-    render_zone_table("Delivery Zone Summary", records, "delivery_zone", phase)
+    render_zone_table(
+        "Delivery Zone Summary",
+        records,
+        "delivery_zone",
+        phase,
+        report_context=report_context,
+    )
 
     st.write("")
-    render_zone_table("Finishing Zone Summary", records, "finishing_zone", phase)
+    render_zone_table(
+        "Finishing Zone Summary",
+        records,
+        "finishing_zone",
+        phase,
+        report_context=report_context,
+    )
 
 
-def render_free_kick_analysis(analysis: dict, phase: str | None = None, analysis_scope: str | None = None):
+def render_free_kick_analysis(
+    analysis: dict,
+    phase: str | None = None,
+    analysis_scope: str | None = None,
+    report_context: dict | None = None,
+):
     records = analysis.get("records", [])
     if not records:
         st.info("No free-kick events found for the selected filters.")
@@ -1693,16 +2002,40 @@ def render_free_kick_analysis(analysis: dict, phase: str | None = None, analysis
 
     st.subheader(f"Free Kicks — {phase_title}")
 
-    render_kpis(records, phase)
+    render_create_report_button(
+        "free_kick",
+        key="create_free_kick_report",
+    )
+
+    render_kpis(
+        records,
+        phase,
+        report_context=report_context,
+    )
     st.markdown("---")
 
-    render_zone_visualisation(records)
+    render_zone_visualisation(
+        records,
+        report_context=report_context,
+    )
     st.markdown("---")
 
-    render_outcome_breakdown(records)
+    render_outcome_breakdown(
+        records,
+        report_context=report_context,
+    )
     st.markdown("---")
 
-    render_effectiveness(records, phase, analysis_scope)
+    render_effectiveness(
+        records,
+        phase,
+        analysis_scope,
+        report_context=report_context,
+    )
     st.markdown("---")
 
-    render_zone_effectiveness(records, phase)
+    render_zone_effectiveness(
+        records,
+        phase,
+        report_context=report_context,
+    )

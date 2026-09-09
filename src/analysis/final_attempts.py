@@ -4,6 +4,19 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.reports.report_items import (
+    create_image_report_item,
+    create_kpi_report_item,
+    create_plotly_report_item,
+    create_table_report_item,
+)
+from src.reports.report_ui import (
+    render_add_to_report_button,
+    render_create_report_button,
+)
+
+_ACTIVE_REPORT_CONTEXT = None
+
 
 TIME_PERIODS = [
     "1-15",
@@ -631,36 +644,56 @@ def _metric_table(
         rows
     )
 
-def _display_df(df, first_column):
+def _display_df(
+    df,
+    first_column,
+    report_section_title: str | None = None,
+    report_key: str | None = None,
+):
     if df.empty:
         st.info("No coded data available.")
         return
 
-    visible = [
-        column
-        for column in df.columns
-        if not column.startswith("_")
-    ]
-
+    visible = [c for c in df.columns if not c.startswith("_")]
+    display_df = df[visible].copy()
     st.dataframe(
-        df[visible],
+        display_df,
         hide_index=True,
         width="stretch",
         column_config={
-            first_column:
-                st.column_config.TextColumn(
-                    first_column,
-                    width="large",
-                ),
-            "Attempts":
-                st.column_config.NumberColumn(
-                    "Attempts",
-                    width="small",
-                ),
+            first_column: st.column_config.TextColumn(first_column, width="large"),
+            "Attempts": st.column_config.NumberColumn("Attempts", width="small"),
         },
     )
 
-
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        titles = {
+            "Period": "Time Profile — Table",
+            "Attack Type": "Attack Type — Table",
+            "Org. Attack Phase": "Type of Organized Attack — Table",
+            "Block Context": "Organized Attack vs Block — Table",
+            "Possession Won Context": "Counter Attack Context — Table",
+            "Recovery Zone": "Recovery Zone Effectiveness — Table",
+            "Pass Sequence": "Number of Passes — Table",
+            "Assist / Pass Type": "Chance Creation Method — Table",
+            "Touches": "Number of Touches — Table",
+            "Set Play": "Type of Set Play — Table",
+            "Corner Type": "Type of Corner Kick — Table",
+            "Free Kick Type": "Type of Free Kick — Table",
+            "Assist Zone": "Assist Zone Effectiveness",
+            "Final Attempt Zone": "Final Attempt Zone Effectiveness",
+            "Player": "Player Contribution",
+        }
+        item=create_table_report_item(
+            module="final_attempt",
+            section_title=report_section_title or titles.get(first_column, f"{first_column} — Table"),
+            dataframe=display_df,
+            context=_ACTIVE_REPORT_CONTEXT,
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_final_attempt_table_{report_key or first_column}_{item['id']}",
+        )
 
 
 def _metric_chart_long_df(
@@ -755,6 +788,8 @@ def render_metric_chart(
     category_col,
     metrics=None,
     height=None,
+    report_section_title: str | None = None,
+    report_key: str | None = None,
 ):
     if df.empty:
         return
@@ -915,6 +950,30 @@ def render_metric_chart(
         width="stretch",
     )
 
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        titles={
+            "Org. Attack Phase": "Type of Organized Attack",
+            "Block Context": "Organized Attack vs Block",
+            "Possession Won Context": "Counter Attack Context",
+            "Recovery Zone": "Recovery Zone Effectiveness",
+            "Pass Sequence": "Number of Passes",
+            "Assist / Pass Type": "Chance Creation Method",
+            "Touches": "Number of Touches",
+            "Set Play": "Type of Set Play",
+            "Corner Type": "Type of Corner Kick",
+            "Free Kick Type": "Type of Free Kick",
+        }
+        item=create_plotly_report_item(
+            module="final_attempt",
+            section_title=report_section_title or titles.get(category_col, category_col),
+            figure=fig,
+            context=_ACTIVE_REPORT_CONTEXT,
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_final_attempt_chart_{report_key or category_col}_{item['id']}",
+        )
+
 
 # ============================================================
 # KEY KPIs
@@ -1018,6 +1077,24 @@ def render_kpis(records, phase):
         ),
     )
 
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        item=create_kpi_report_item(
+            module="final_attempt",
+            section_title="Key KPIs",
+            kpis=[
+                {"label": "Final Attempts" if phase == "offensive" else "Final Attempts Faced", "value": total},
+                {"label": "On Target", "value": fmt_rate(m["on_target"], total)},
+                {"label": "Off Target", "value": fmt_rate(m["off_target"], total)},
+                {"label": "Blocked", "value": fmt_rate(m["blocked"], total)},
+                {"label": "Most Common Attack Type", "value": attack_type},
+                {"label": "Most Common Period", "value": time_period},
+                {"label": "Most Common Final Attempt Player", "value": final_attempt_player},
+                {"label": "Most Common Assist Player", "value": assist},
+            ],
+            context=_ACTIVE_REPORT_CONTEXT,
+        )
+        render_add_to_report_button(item,key=f"report_final_attempt_kpis_{item['id']}")
+
 
 # ============================================================
 # TIME PROFILE
@@ -1095,6 +1172,10 @@ def render_time_profile(records):
         fig,
         width="stretch",
     )
+
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        item=create_plotly_report_item(module="final_attempt",section_title="Time Profile",figure=fig,context=_ACTIVE_REPORT_CONTEXT)
+        render_add_to_report_button(item,key=f"report_final_attempt_time_{item['id']}")
 
     table = _metric_table(
         records,
@@ -1191,6 +1272,10 @@ def render_attack_type(records):
         fig,
         width="stretch",
     )
+
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        item=create_plotly_report_item(module="final_attempt",section_title="Attack Type",figure=fig,context=_ACTIVE_REPORT_CONTEXT)
+        render_add_to_report_button(item,key=f"report_final_attempt_attack_{item['id']}")
 
     _display_df(
         df,
@@ -2680,6 +2765,17 @@ body {{
         height=475,
     )
 
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        item=create_image_report_item(
+            module="final_attempt",
+            section_title="Spatial Analysis",
+            html=html,
+            context=_ACTIVE_REPORT_CONTEXT,
+            width_px=1400,
+            height_px=475,
+        )
+        render_add_to_report_button(item,key=f"report_final_attempt_spatial_{item['id']}")
+
     st.caption(
         "Spatial layout follows the Sportscode Final Attempts report. "
         "Counts are calculated from the currently filtered events."
@@ -2699,6 +2795,8 @@ body {{
     _display_df(
         recovery_df,
         "Recovery Zone",
+        report_section_title="Recovery Zone Effectiveness",
+        report_key="spatial_recovery_zone",
     )
 
     st.write("")
@@ -2716,6 +2814,8 @@ body {{
     _display_df(
         assist_df,
         "Assist Zone",
+        report_section_title="Assist Zone Effectiveness",
+        report_key="spatial_assist_zone",
     )
 
     st.write("")
@@ -2733,6 +2833,8 @@ body {{
     _display_df(
         final_df,
         "Final Attempt Zone",
+        report_section_title="Final Attempt Zone Effectiveness",
+        report_key="spatial_final_zone",
     )
 
 
@@ -2805,6 +2907,8 @@ def render_players(records):
     _display_df(
         shooter_df,
         "Player",
+        report_section_title="Final Attempt Player",
+        report_key="final_attempt_player",
     )
 
     st.write("")
@@ -2823,6 +2927,8 @@ def render_players(records):
     _display_df(
         assist_df,
         "Player",
+        report_section_title="Assist Player",
+        report_key="assist_player",
     )
 
     st.caption(
@@ -2846,6 +2952,8 @@ def render_players(records):
     _display_df(
         second_df,
         "Player",
+        report_section_title="Pre-Assist / 2nd Assist",
+        report_key="second_assist",
     )
 
     st.write("")
@@ -2864,6 +2972,8 @@ def render_players(records):
     _display_df(
         recovery_df,
         "Player",
+        report_section_title="Recovery Player",
+        report_key="recovery_player",
     )
 
 
@@ -2959,11 +3069,11 @@ def render_relationships(
                 }
             )
 
-        st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            width="stretch",
-        )
+        relationship_df=pd.DataFrame(rows)
+        st.dataframe(relationship_df,hide_index=True,width="stretch")
+        if _ACTIVE_REPORT_CONTEXT is not None:
+            item=create_table_report_item(module="final_attempt",section_title="Pre-Assist → Assist → Final Attempt Player",dataframe=relationship_df,context=_ACTIVE_REPORT_CONTEXT)
+            render_add_to_report_button(item,key=f"report_final_attempt_chain_{item['id']}")
 
     # --------------------------------------------------------
     # ASSIST ZONE -> FINAL ATTEMPT ZONE
@@ -3016,11 +3126,11 @@ def render_relationships(
                 }
             )
 
-        st.dataframe(
-            pd.DataFrame(rows),
-            hide_index=True,
-            width="stretch",
-        )
+        relationship_df=pd.DataFrame(rows)
+        st.dataframe(relationship_df,hide_index=True,width="stretch")
+        if _ACTIVE_REPORT_CONTEXT is not None:
+            item=create_table_report_item(module="final_attempt",section_title="Assist Zone → Final Attempt Zone",dataframe=relationship_df,context=_ACTIVE_REPORT_CONTEXT)
+            render_add_to_report_button(item,key=f"report_final_attempt_zone_relation_{item['id']}")
 
 
 # ============================================================
@@ -3031,7 +3141,11 @@ def render_final_attempt_analysis(
     analysis: dict,
     phase: str | None = None,
     analysis_scope: str | None = None,
+    report_context: dict | None = None,
 ):
+    global _ACTIVE_REPORT_CONTEXT
+    _ACTIVE_REPORT_CONTEXT = report_context
+
     records = analysis.get(
         "records",
         [],
@@ -3057,6 +3171,11 @@ def render_final_attempt_analysis(
 
     st.subheader(
         f"Final Attempts — {phase_title}"
+    )
+
+    render_create_report_button(
+        "final_attempt",
+        key="create_final_attempt_report",
     )
 
     render_kpis(

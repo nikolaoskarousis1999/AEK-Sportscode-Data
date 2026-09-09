@@ -4,6 +4,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from src.reports.report_items import (
+    create_image_report_item,
+    create_kpi_report_item,
+    create_plotly_report_item,
+    create_table_report_item,
+)
+
+from src.reports.report_ui import (
+    render_add_to_report_button,
+    render_create_report_button,
+)
+
 
 # ============================================================
 # CONSTANTS
@@ -444,6 +456,7 @@ def get_corner_metrics(
 def render_kpis(
     records: list[dict],
     phase: str,
+    report_context: dict | None = None,
 ):
     metrics = get_corner_metrics(
         records,
@@ -669,6 +682,43 @@ def render_kpis(
                     value,
                     help=help_text,
                 )
+
+    if report_context is not None:
+        kpi_items = []
+        notes = []
+
+        for row in rows:
+            for (
+                label,
+                value,
+                help_text,
+            ) in row:
+                kpi_items.append(
+                    {
+                        "label": label,
+                        "value": value,
+                    }
+                )
+
+                if help_text:
+                    notes.append(
+                        f"{label}: {help_text}"
+                    )
+
+        report_item = create_kpi_report_item(
+            module="corner_kick",
+            section_title="Key KPIs",
+            kpis=kpi_items,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_kpis_"
+                f"{report_item['id']}"
+            ),
+        )
 
 
 # ============================================================
@@ -898,6 +948,7 @@ def _zone_panel(
 def render_zone_visualisation(
     records: list[dict],
     phase: str,
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Zone Visualisation"
@@ -1601,6 +1652,24 @@ body {{
         height=455,
     )
 
+    if report_context is not None:
+        report_item = create_image_report_item(
+            module="corner_kick",
+            section_title="Zone Visualisation",
+            html=html,
+            context=report_context,
+            width_px=1400,
+            height_px=455,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_zone_visualisation_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 # ============================================================
 # OUTCOME BREAKDOWN
@@ -1664,6 +1733,7 @@ def build_outcome_dataframe(
 
 def render_outcome_breakdown(
     records: list[dict],
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Outcome Breakdown"
@@ -1744,6 +1814,26 @@ def render_outcome_breakdown(
         "OUTCOME labels are not mutually exclusive. "
         "One corner can contain more than one outcome."
     )
+
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="corner_kick",
+            section_title="Outcome Breakdown",
+            figure=fig,
+            context=report_context,
+            notes=[
+                "OUTCOME labels are not mutually exclusive. "
+                "One corner can contain more than one outcome."
+            ],
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_outcome_"
+                f"{report_item['id']}"
+            ),
+        )
 
 
 # ============================================================
@@ -1923,6 +2013,7 @@ def build_effectiveness_dataframe(
 def render_first_contact_chart(
     records: list[dict],
     phase: str,
+    report_context: dict | None = None,
 ):
     rows = []
 
@@ -2076,6 +2167,22 @@ def render_first_contact_chart(
         width="stretch",
     )
 
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="corner_kick",
+            section_title="First Contact → Outcome",
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_first_contact_chart_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 # ============================================================
 # DELIVERY TYPE EFFECTIVENESS
@@ -2084,6 +2191,7 @@ def render_first_contact_chart(
 def render_delivery_type_scatter(
     records: list[dict],
     phase: str,
+    report_context: dict | None = None,
 ):
     rows = []
 
@@ -2383,6 +2491,25 @@ def render_delivery_type_scatter(
             },
         )
 
+        if report_context is not None:
+            report_item = create_plotly_report_item(
+                module="corner_kick",
+                section_title=(
+                    "Delivery Type Effectiveness — Scatter"
+                ),
+                figure=fig,
+                context=report_context,
+            )
+
+            render_add_to_report_button(
+                report_item,
+                key=(
+                    "report_corner_delivery_scatter_"
+                    f"{report_item['id']}"
+                ),
+            )
+
+
 def render_effectiveness_table(
     title: str,
     records: list[dict],
@@ -2392,6 +2519,8 @@ def render_effectiveness_table(
     include_unknown: bool = False,
     first_contact_table: bool = False,
     show_title: bool = True,
+    report_context: dict | None = None,
+    report_section_title: str | None = None,
 ):
     if show_title:
         st.markdown(
@@ -2500,6 +2629,29 @@ def render_effectiveness_table(
         },
     )
 
+    if report_context is not None:
+        section_title = (
+            report_section_title
+            or title
+            or f"{category_name} Effectiveness"
+        )
+
+        report_item = create_table_report_item(
+            module="corner_kick",
+            section_title=section_title,
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_effectiveness_table_"
+                f"{group_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 # ============================================================
 # EFFECTIVENESS SECTION
@@ -2509,6 +2661,7 @@ def render_effectiveness(
     records: list[dict],
     phase: str,
     analysis_scope: str | None = None,
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Effectiveness"
@@ -2525,6 +2678,7 @@ def render_effectiveness(
     render_first_contact_chart(
         records,
         phase,
+        report_context=report_context,
     )
 
     render_effectiveness_table(
@@ -2537,6 +2691,10 @@ def render_effectiveness(
         ),
         first_contact_table=True,
         show_title=False,
+        report_context=report_context,
+        report_section_title=(
+            "First Contact Effectiveness — Table"
+        ),
     )
 
     st.write("")
@@ -2556,6 +2714,7 @@ def render_effectiveness(
         render_delivery_type_scatter(
             records,
             phase,
+            report_context=report_context,
         )
 
     render_effectiveness_table(
@@ -2567,6 +2726,10 @@ def render_effectiveness(
             "Delivery Type"
         ),
         show_title=False,
+        report_context=report_context,
+        report_section_title=(
+            "Delivery Type Effectiveness — Table"
+        ),
     )
 
     st.write("")
@@ -2585,6 +2748,7 @@ def render_effectiveness(
             phase=phase,
             category_name="Taker",
             include_unknown=True,
+            report_context=report_context,
         )
 
     else:
@@ -2601,6 +2765,7 @@ def render_effectiveness(
                 "Opponent Players"
             ),
             include_unknown=True,
+            report_context=report_context,
         )
 
     st.write("")
@@ -2617,6 +2782,7 @@ def render_effectiveness(
         group_key="side",
         phase=phase,
         category_name="Side",
+        report_context=report_context,
     )
 
     # --------------------------------------------------------
@@ -2642,6 +2808,7 @@ def render_effectiveness(
             category_name=(
                 "Opponent Organization"
             ),
+            report_context=report_context,
         )
 
 
@@ -2812,6 +2979,7 @@ def render_zone_effectiveness_chart(
     records: list[dict],
     zone_key: str,
     phase: str,
+    report_context: dict | None = None,
 ):
     zones = category_counts(
         records,
@@ -2965,6 +3133,31 @@ def render_zone_effectiveness_chart(
         width="stretch",
     )
 
+    if report_context is not None:
+        zone_label = (
+            "Delivery Zone"
+            if zone_key == "delivery_zone"
+            else "Finishing Zone"
+        )
+
+        report_item = create_plotly_report_item(
+            module="corner_kick",
+            section_title=(
+                f"{zone_label} Effectiveness"
+            ),
+            figure=fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_zone_chart_"
+                f"{zone_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 # ============================================================
 # ZONE TABLE
@@ -2976,6 +3169,8 @@ def render_zone_table(
     zone_key: str,
     phase: str,
     show_title: bool = True,
+    report_context: dict | None = None,
+    report_section_title: str | None = None,
 ):
     if show_title:
         st.markdown(
@@ -3045,6 +3240,33 @@ def render_zone_table(
         },
     )
 
+    if report_context is not None:
+        section_title = (
+            report_section_title
+            or title
+            or (
+                "Delivery Zone Summary"
+                if zone_key == "delivery_zone"
+                else "Finishing Zone Summary"
+            )
+        )
+
+        report_item = create_table_report_item(
+            module="corner_kick",
+            section_title=section_title,
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_corner_zone_table_"
+                f"{zone_key}_"
+                f"{report_item['id']}"
+            ),
+        )
+
 
 # ============================================================
 # ZONE EFFECTIVENESS
@@ -3053,6 +3275,7 @@ def render_zone_table(
 def render_zone_effectiveness(
     records: list[dict],
     phase: str,
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Zone Effectiveness"
@@ -3066,6 +3289,7 @@ def render_zone_effectiveness(
         records=records,
         zone_key="delivery_zone",
         phase=phase,
+        report_context=report_context,
     )
 
     render_zone_table(
@@ -3074,6 +3298,10 @@ def render_zone_effectiveness(
         zone_key="delivery_zone",
         phase=phase,
         show_title=False,
+        report_context=report_context,
+        report_section_title=(
+            "Delivery Zone Summary"
+        ),
     )
 
     st.write("")
@@ -3085,6 +3313,10 @@ def render_zone_effectiveness(
         records=records,
         zone_key="finishing_zone",
         phase=phase,
+        report_context=report_context,
+        report_section_title=(
+            "Finishing Zone Summary"
+        ),
     )
 
 
@@ -3096,6 +3328,7 @@ def render_corner_kick_analysis(
     analysis: dict,
     phase: str | None = None,
     analysis_scope: str | None = None,
+    report_context: dict | None = None,
 ):
     records = analysis.get(
         "records",
@@ -3124,9 +3357,15 @@ def render_corner_kick_analysis(
         f"Corner Kicks — {phase_title}"
     )
 
+    render_create_report_button(
+        "corner_kick",
+        key="create_corner_kick_report",
+    )
+
     render_kpis(
         records,
         phase,
+        report_context=report_context,
     )
 
     st.markdown("---")
@@ -3134,12 +3373,14 @@ def render_corner_kick_analysis(
     render_zone_visualisation(
         records,
         phase,
+        report_context=report_context,
     )
 
     st.markdown("---")
 
     render_outcome_breakdown(
-        records
+        records,
+        report_context=report_context,
     )
 
     st.markdown("---")
@@ -3148,6 +3389,7 @@ def render_corner_kick_analysis(
         records,
         phase,
         analysis_scope,
+        report_context=report_context,
     )
 
     st.markdown("---")
@@ -3155,4 +3397,5 @@ def render_corner_kick_analysis(
     render_zone_effectiveness(
         records,
         phase,
+        report_context=report_context,
     )

@@ -1,9 +1,20 @@
 from collections import Counter
 
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+
+from src.reports.report_items import (
+    create_kpi_report_item,
+    create_plotly_report_item,
+    create_table_report_item,
+)
+from src.reports.report_ui import (
+    render_add_to_report_button,
+    render_create_report_button,
+)
 
 
 # ============================================================
@@ -527,6 +538,7 @@ def build_result_dataframe(
 
 def render_result_breakdown(
     records: list[dict],
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Result Breakdown"
@@ -590,6 +602,23 @@ def render_result_breakdown(
         "One throw-in can contain more than one result, "
         "so percentages do not need to total 100%."
     )
+
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="throw_in",
+            section_title="Result Breakdown",
+            figure=fig,
+            context=report_context,
+            notes=[
+                "RESULT labels are not mutually exclusive. "
+                "One throw-in can contain more than one result, "
+                "so percentages do not need to total 100%.",
+            ],
+        )
+        render_add_to_report_button(
+            report_item,
+            key=f"report_throw_result_{report_item['id']}",
+        )
 
 
 # ============================================================
@@ -721,6 +750,7 @@ def build_retention_by_zone_dataframe(
 
 def render_retention_by_zone(
     records: list[dict],
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Retention by Zone"
@@ -884,6 +914,22 @@ def render_retention_by_zone(
         "Box Entry rate uses all throw-ins in each zone "
         "as the denominator."
     )
+
+    if report_context is not None:
+        report_item = create_plotly_report_item(
+            module="throw_in",
+            section_title="Retention by Zone",
+            figure=fig,
+            context=report_context,
+            notes=[
+                "Retention percentages use only throw-ins with a RETENTION label as the denominator.",
+                "Box Entry rate uses all throw-ins in each zone as the denominator.",
+            ],
+        )
+        render_add_to_report_button(
+            report_item,
+            key=f"report_throw_retention_zone_{report_item['id']}",
+        )
 
 
 # ============================================================
@@ -1128,12 +1174,153 @@ def build_effectiveness_dataframe(
 
 
 # ============================================================
+# PDF-ONLY CHART LABELS
+# ============================================================
+
+def _build_pdf_labeled_bar_figure(
+    df: pd.DataFrame,
+    metric_specs: list[tuple[str, str, str]],
+    *,
+    xaxis_title: str = "",
+):
+    """
+    Build a dedicated PDF-only grouped bar chart directly from the
+    analytical dataframe.
+
+    metric_specs contains:
+        (numeric_percentage_column, legend_name, display_label_column)
+
+    This avoids relying on the Streamlit Plotly trace ordering and
+    guarantees that every printed label is attached to the exact bar
+    that produced it.
+    """
+    rows = []
+
+    category_order = [
+        str(value)
+        for value in df[
+            "Category"
+        ].tolist()
+    ]
+
+    for _, row in df.iterrows():
+        category = str(
+            row[
+                "Category"
+            ]
+        )
+
+        for (
+            percentage_column,
+            metric_name,
+            display_column,
+        ) in metric_specs:
+            percentage = row.get(
+                percentage_column,
+                0,
+            )
+
+            display = row.get(
+                display_column,
+                "",
+            )
+
+            rows.append(
+                {
+                    "Category":
+                        category,
+
+                    "Metric":
+                        metric_name,
+
+                    "Percentage":
+                        percentage,
+
+                    "Display":
+                        str(display),
+                }
+            )
+
+    pdf_df = pd.DataFrame(
+        rows
+    )
+
+    pdf_fig = px.bar(
+        pdf_df,
+        x="Category",
+        y="Percentage",
+        color="Metric",
+        barmode="group",
+        text="Display",
+        category_orders={
+            "Category":
+                category_order,
+
+            "Metric":
+                [
+                    metric_name
+                    for (
+                        _,
+                        metric_name,
+                        _,
+                    )
+                    in metric_specs
+                ],
+        },
+        color_discrete_map={
+            "Keep Possession":
+                "#7DBAF2",
+
+            "Forward":
+                "#0D76C9",
+
+            "Box Entry":
+                "#FFA1A6",
+
+            "Win Set Play":
+                "#FF2D2D",
+        },
+    )
+
+    pdf_fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        textfont=dict(
+            size=12,
+            color="#222222",
+        ),
+    )
+
+    pdf_fig.update_layout(
+        height=520,
+        margin=dict(
+            l=30,
+            r=30,
+            t=20,
+            b=30,
+        ),
+        xaxis_title=xaxis_title,
+        yaxis_title="Rate (%)",
+        yaxis=dict(
+            range=[
+                0,
+                115,
+            ]
+        ),
+        legend_title="",
+    )
+
+    return pdf_fig
+
+
+# ============================================================
 # EFFECTIVENESS CHART
 # ============================================================
 
 def render_effectiveness_chart(
     title: str,
     df: pd.DataFrame,
+    report_context: dict | None = None,
 ):
     st.markdown(
         f"#### {title}"
@@ -1190,12 +1377,78 @@ def render_effectiveness_chart(
         )
     )
 
+    display_lookup = {}
+
+    for _, row in df.iterrows():
+        category = str(
+            row[
+                "Category"
+            ]
+        )
+
+        display_lookup[
+            (
+                category,
+                "Keep Possession",
+            )
+        ] = row[
+            "Keep Possession"
+        ]
+
+        display_lookup[
+            (
+                category,
+                "Box Entry",
+            )
+        ] = row[
+            "Box Entry"
+        ]
+
+        display_lookup[
+            (
+                category,
+                "Win Set Play",
+            )
+        ] = row[
+            "Win SP"
+        ]
+
+    chart_long[
+        "Display"
+    ] = [
+        display_lookup.get(
+            (
+                str(category),
+                str(metric),
+            ),
+            "",
+        )
+        for category, metric
+        in zip(
+            chart_long[
+                "Category"
+            ],
+            chart_long[
+                "Metric"
+            ],
+        )
+    ]
+
     fig = px.bar(
         chart_long,
         x="Category",
         y="Percentage",
         color="Metric",
         barmode="group",
+        text="Display",
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        textfont=dict(
+            size=12,
+        ),
     )
 
     fig.update_layout(
@@ -1213,7 +1466,7 @@ def render_effectiveness_chart(
         yaxis=dict(
             range=[
                 0,
-                105,
+                115,
             ]
         ),
         legend_title="",
@@ -1250,6 +1503,39 @@ def render_effectiveness_chart(
         width="stretch",
     )
 
+    if report_context is not None:
+        pdf_fig = _build_pdf_labeled_bar_figure(
+            df,
+            [
+                (
+                    "Keep %",
+                    "Keep Possession",
+                    "Keep Possession",
+                ),
+                (
+                    "Box Entry %",
+                    "Box Entry",
+                    "Box Entry",
+                ),
+                (
+                    "Win SP %",
+                    "Win Set Play",
+                    "Win SP",
+                ),
+            ],
+        )
+
+        report_item = create_plotly_report_item(
+            module="throw_in",
+            section_title=title,
+            figure=pdf_fig,
+            context=report_context,
+        )
+        render_add_to_report_button(
+            report_item,
+            key=f"report_throw_effectiveness_{title}_{report_item['id']}",
+        )
+
 
 # ============================================================
 # PLAYER COMPARISON
@@ -1257,6 +1543,7 @@ def render_effectiveness_chart(
 
 def render_player_comparison(
     records: list[dict],
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Player Comparison"
@@ -1326,12 +1613,87 @@ def render_player_comparison(
         )
     )
 
+    display_lookup = {}
+
+    for _, row in df.iterrows():
+        category = str(
+            row[
+                "Category"
+            ]
+        )
+
+        display_lookup[
+            (
+                category,
+                "Keep Possession",
+            )
+        ] = row[
+            "Keep Possession"
+        ]
+
+        display_lookup[
+            (
+                category,
+                "Forward",
+            )
+        ] = row[
+            "Forward"
+        ]
+
+        display_lookup[
+            (
+                category,
+                "Box Entry",
+            )
+        ] = row[
+            "Box Entry"
+        ]
+
+        display_lookup[
+            (
+                category,
+                "Win Set Play",
+            )
+        ] = row[
+            "Win SP"
+        ]
+
+    chart_long[
+        "Display"
+    ] = [
+        display_lookup.get(
+            (
+                str(category),
+                str(metric),
+            ),
+            "",
+        )
+        for category, metric
+        in zip(
+            chart_long[
+                "Category"
+            ],
+            chart_long[
+                "Metric"
+            ],
+        )
+    ]
+
     fig = px.bar(
         chart_long,
         x="Category",
         y="Percentage",
         color="Metric",
         barmode="group",
+        text="Display",
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        textfont=dict(
+            size=12,
+        ),
     )
 
     fig.update_layout(
@@ -1347,7 +1709,7 @@ def render_player_comparison(
         yaxis=dict(
             range=[
                 0,
-                105,
+                115,
             ]
         ),
         legend_title="",
@@ -1387,6 +1749,45 @@ def render_player_comparison(
         width="stretch",
     )
 
+    if report_context is not None:
+        pdf_fig = _build_pdf_labeled_bar_figure(
+            df,
+            [
+                (
+                    "Keep %",
+                    "Keep Possession",
+                    "Keep Possession",
+                ),
+                (
+                    "Forward %",
+                    "Forward",
+                    "Forward",
+                ),
+                (
+                    "Box Entry %",
+                    "Box Entry",
+                    "Box Entry",
+                ),
+                (
+                    "Win SP %",
+                    "Win Set Play",
+                    "Win SP",
+                ),
+            ],
+            xaxis_title="Taker",
+        )
+
+        report_item = create_plotly_report_item(
+            module="throw_in",
+            section_title="Player Comparison",
+            figure=pdf_fig,
+            context=report_context,
+        )
+        render_add_to_report_button(
+            report_item,
+            key=f"report_throw_player_{report_item['id']}",
+        )
+
     st.caption(
         "Use the Taker filter to turn the whole "
         "dashboard into an individual player profile."
@@ -1399,6 +1800,7 @@ def render_player_comparison(
 
 def render_zone_effectiveness(
     records: list[dict],
+    report_context: dict | None = None,
 ):
     st.markdown(
         "### Zone Effectiveness"
@@ -1452,6 +1854,18 @@ def render_zone_effectiveness(
         width="stretch",
     )
 
+    if report_context is not None:
+        report_item = create_table_report_item(
+            module="throw_in",
+            section_title="Zone Effectiveness",
+            dataframe=display_df,
+            context=report_context,
+        )
+        render_add_to_report_button(
+            report_item,
+            key=f"report_throw_zone_table_{report_item['id']}",
+        )
+
 
 # ============================================================
 # MAIN RENDER
@@ -1459,6 +1873,7 @@ def render_zone_effectiveness(
 
 def render_throw_in_analysis(
     analysis: dict,
+    report_context: dict | None = None,
 ):
     records = analysis[
         "records"
@@ -1495,6 +1910,11 @@ def render_throw_in_analysis(
 
     st.subheader(
         "Throw-ins — Offensive"
+    )
+
+    render_create_report_button(
+        "throw_in",
+        key="create_throw_in_report",
     )
 
     # ========================================================
@@ -1640,6 +2060,36 @@ def render_throw_in_analysis(
             f"of the currently filtered throw-ins."
         )
 
+    if report_context is not None:
+        kpi_item = create_kpi_report_item(
+            module="throw_in",
+            section_title="Key KPIs",
+            context=report_context,
+            kpis=[
+                {"label": "Total Throw-ins", "value": str(total)},
+                {"label": "Retention Rate", "value": format_rate(kpis["kept"], retention_denominator)},
+                {"label": "Forward Throw Rate", "value": format_rate(kpis["forward"], total)},
+                {"label": "Forward Retention", "value": format_rate(kpis["forward_kept"], forward_retention_denominator)},
+                {"label": "Box Entry Rate", "value": format_rate(kpis["box_entry"], total)},
+                {"label": "Set Play Won", "value": format_rate(kpis["win_set_play"], total)},
+                {"label": "Most Common Zone", "value": kpis["most_common_zone"]},
+                {"label": "Most Common Taker", "value": kpis["most_common_taker"]},
+                {"label": "Most Common Length", "value": kpis["most_common_length"]},
+                {"label": "Most Common Speed", "value": kpis["most_common_speed"]},
+            ],
+            notes=(
+                [
+                    f"Retention is coded for {retention_denominator}/{total} of the currently filtered throw-ins."
+                ]
+                if retention_denominator < total
+                else []
+            ),
+        )
+        render_add_to_report_button(
+            kpi_item,
+            key=f"report_throw_kpis_{kpi_item['id']}",
+        )
+
     # ========================================================
     # RESULT BREAKDOWN
     # ========================================================
@@ -1647,7 +2097,8 @@ def render_throw_in_analysis(
     st.markdown("---")
 
     render_result_breakdown(
-        records
+        records,
+        report_context=report_context,
     )
 
     # ========================================================
@@ -1657,7 +2108,8 @@ def render_throw_in_analysis(
     st.markdown("---")
 
     render_retention_by_zone(
-        records
+        records,
+        report_context=report_context,
     )
 
     # ========================================================
@@ -1705,18 +2157,21 @@ def render_throw_in_analysis(
         render_effectiveness_chart(
             "Direction Effectiveness",
             direction_df,
+            report_context=report_context,
         )
 
     with tab2:
         render_effectiveness_chart(
             "Speed Effectiveness",
             speed_df,
+            report_context=report_context,
         )
 
     with tab3:
         render_effectiveness_chart(
             "Length Effectiveness",
             length_df,
+            report_context=report_context,
         )
 
     # ========================================================
@@ -1726,7 +2181,8 @@ def render_throw_in_analysis(
     st.markdown("---")
 
     render_player_comparison(
-        records
+        records,
+        report_context=report_context,
     )
 
     # ========================================================
@@ -1736,5 +2192,6 @@ def render_throw_in_analysis(
     st.markdown("---")
 
     render_zone_effectiveness(
-        records
+        records,
+        report_context=report_context,
     )
