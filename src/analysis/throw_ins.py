@@ -1477,32 +1477,6 @@ def render_effectiveness_chart(
         width="stretch",
     )
 
-    display_df = df[
-        [
-            "Category",
-            "Throw-ins",
-            "Keep Possession",
-            "Loss Possession",
-            "Forward",
-            "Box Entry",
-            "Win SP",
-            "Switch Play",
-        ]
-    ].copy()
-
-    display_df = display_df.rename(
-        columns={
-            "Win SP":
-                "Win Set Play",
-        }
-    )
-
-    st.dataframe(
-        display_df,
-        hide_index=True,
-        width="stretch",
-    )
-
     if report_context is not None:
         pdf_fig = _build_pdf_labeled_bar_figure(
             df,
@@ -1531,9 +1505,55 @@ def render_effectiveness_chart(
             figure=pdf_fig,
             context=report_context,
         )
+
         render_add_to_report_button(
             report_item,
-            key=f"report_throw_effectiveness_{title}_{report_item['id']}",
+            key=(
+                "report_throw_effectiveness_"
+                f"{title}_{report_item['id']}"
+            ),
+        )
+
+    display_df = df[
+        [
+            "Category",
+            "Throw-ins",
+            "Keep Possession",
+            "Loss Possession",
+            "Forward",
+            "Box Entry",
+            "Win SP",
+            "Switch Play",
+        ]
+    ].copy()
+
+    display_df = display_df.rename(
+        columns={
+            "Win SP":
+                "Win Set Play",
+        }
+    )
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        table_item = create_table_report_item(
+            module="throw_in",
+            section_title=f"{title} — Table",
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            table_item,
+            key=(
+                "report_throw_effectiveness_table_"
+                f"{title}_{table_item['id']}"
+            ),
         )
 
 
@@ -1720,35 +1740,6 @@ def render_player_comparison(
         width="stretch",
     )
 
-    table_df = df[
-        [
-            "Category",
-            "Throw-ins",
-            "Keep Possession",
-            "Loss Possession",
-            "Forward",
-            "Box Entry",
-            "Win SP",
-            "Switch Play",
-        ]
-    ].copy()
-
-    table_df = table_df.rename(
-        columns={
-            "Category":
-                "Taker",
-
-            "Win SP":
-                "Win Set Play",
-        }
-    )
-
-    st.dataframe(
-        table_df,
-        hide_index=True,
-        width="stretch",
-    )
-
     if report_context is not None:
         pdf_fig = _build_pdf_labeled_bar_figure(
             df,
@@ -1783,9 +1774,55 @@ def render_player_comparison(
             figure=pdf_fig,
             context=report_context,
         )
+
         render_add_to_report_button(
             report_item,
             key=f"report_throw_player_{report_item['id']}",
+        )
+
+    table_df = df[
+        [
+            "Category",
+            "Throw-ins",
+            "Keep Possession",
+            "Loss Possession",
+            "Forward",
+            "Box Entry",
+            "Win SP",
+            "Switch Play",
+        ]
+    ].copy()
+
+    table_df = table_df.rename(
+        columns={
+            "Category":
+                "Taker",
+
+            "Win SP":
+                "Win Set Play",
+        }
+    )
+
+    st.dataframe(
+        table_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        table_item = create_table_report_item(
+            module="throw_in",
+            section_title="Player Comparison — Table",
+            dataframe=table_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            table_item,
+            key=(
+                "report_throw_player_table_"
+                f"{table_item['id']}"
+            ),
         )
 
     st.caption(
