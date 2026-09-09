@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import importlib.util
 
 import plotly.io as pio
 
@@ -227,8 +228,56 @@ def plotly_json_to_png(
         )
 
     except Exception as exc:
-        raise RuntimeError(
-            "Plotly chart export requires Kaleido. "
-            "Install it in the project virtual environment "
-            "with: pip install -U kaleido"
-        ) from exc
+        # Give a precise error if Kaleido itself is genuinely missing.
+        if importlib.util.find_spec(
+            "kaleido"
+        ) is None:
+            raise RuntimeError(
+                "Plotly chart export requires Kaleido. "
+                "Install it in the project virtual environment "
+                "with: pip install -U kaleido"
+            ) from exc
+
+        message = str(
+            exc
+        ).lower()
+
+        chrome_missing = any(
+            token in message
+            for token in (
+                "chrome",
+                "chromium",
+                "browser",
+                "browser_path",
+            )
+        )
+
+        if not chrome_missing:
+            # Do not hide unrelated Plotly/Kaleido errors behind the
+            # generic 'install Kaleido' message.
+            raise RuntimeError(
+                "Plotly chart export failed: "
+                f"{exc}"
+            ) from exc
+
+        try:
+            # Kaleido v1 does not bundle Chrome. On Streamlit Community
+            # Cloud there may be no browser available after pip install.
+            # Plotly's supported installer downloads a compatible Chrome
+            # for Kaleido into its default cache location.
+            pio.get_chrome()
+
+            return figure.to_image(
+                format="png",
+                width=width,
+                height=height,
+                scale=scale,
+            )
+
+        except Exception as retry_exc:
+            raise RuntimeError(
+                "Plotly chart export failed because Kaleido could not "
+                "find or install Chrome/Chromium. "
+                f"Original error: {exc}. "
+                f"Retry error: {retry_exc}"
+            ) from retry_exc
