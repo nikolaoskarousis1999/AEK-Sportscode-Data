@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from io import BytesIO
+import subprocess
+import sys
 
 from playwright.sync_api import sync_playwright
 
@@ -601,6 +603,31 @@ def _build_plotly_image(
 
 
 # ============================================================
+# PLAYWRIGHT / CHROMIUM
+# ============================================================
+
+def _install_playwright_chromium() -> None:
+    """
+    Install the Chromium binary required by Playwright.
+
+    This is used only as a fallback when Playwright reports that its
+    Chromium executable is missing. Keeping installation lazy avoids
+    starting a second temporary Playwright connection, which can produce
+    shutdown warnings on Windows.
+    """
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "playwright",
+            "install",
+            "chromium",
+        ],
+        check=True,
+    )
+
+
+# ============================================================
 # EXACT STREAMLIT HTML VISUALISATION IMAGE
 # ============================================================
 
@@ -643,9 +670,27 @@ def _build_html_visual_image(
     # Chromium screenshot of the same iframe content.
     # device_scale_factor=2 keeps text/lines sharp in the PDF.
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=True,
-        )
+        try:
+            browser = playwright.chromium.launch(
+                headless=True,
+            )
+
+        except Exception as exc:
+            message = str(exc)
+
+            if (
+                "Executable doesn't exist"
+                not in message
+                and "executable doesn't exist"
+                not in message.lower()
+            ):
+                raise
+
+            _install_playwright_chromium()
+
+            browser = playwright.chromium.launch(
+                headless=True,
+            )
 
         try:
             page = browser.new_page(
