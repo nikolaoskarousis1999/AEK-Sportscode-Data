@@ -442,6 +442,17 @@ def build_analysis(
 def load_labels_for_events(
     events: list[dict],
 ) -> list[dict]:
+    """
+    Load every label for the supplied analytical events.
+
+    Aggregate scopes can contain well over 1,000 label rows.
+    Loading every event id in one Supabase request can therefore
+    hit the API row limit and silently return only the first page.
+
+    Fetching labels in small event batches keeps every request
+    comfortably below that limit and preserves multi-value labels
+    such as Final Attempt outcome = [ON TARGET, GOAL].
+    """
 
     if not events:
         return []
@@ -457,9 +468,30 @@ def load_labels_for_events(
     if not event_ids:
         return []
 
-    return load_event_labels(
-        event_ids
-    )
+    labels = []
+
+    batch_size = 20
+
+    for start in range(
+        0,
+        len(event_ids),
+        batch_size,
+    ):
+        batch_event_ids = event_ids[
+            start:
+            start + batch_size
+        ]
+
+        batch_labels = load_event_labels(
+            batch_event_ids
+        )
+
+        if batch_labels:
+            labels.extend(
+                batch_labels
+            )
+
+    return labels
 
 
 # ============================================================

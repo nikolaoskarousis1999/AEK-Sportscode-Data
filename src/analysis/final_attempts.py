@@ -31,6 +31,7 @@ OUTCOMES = [
     "ON TARGET",
     "OFF TARGET",
     "BLOCKED",
+    "GOAL",
 ]
 
 OTHER_VALUES = {
@@ -393,31 +394,18 @@ def resolve_phase(analysis, phase):
 def outcome_metrics(records):
     total = len(records)
 
-    on_target = count_value(
-        records,
-        "outcome",
-        "ON TARGET",
-    )
-
-    off_target = count_value(
-        records,
-        "outcome",
-        "OFF TARGET",
-    )
-
-    blocked = count_value(
-        records,
-        "outcome",
-        "BLOCKED",
-    )
+    on_target = count_value(records, "outcome", "ON TARGET")
+    off_target = count_value(records, "outcome", "OFF TARGET")
+    blocked = count_value(records, "outcome", "BLOCKED")
+    goals = count_value(records, "outcome", "GOAL")
 
     return {
         "total": total,
         "on_target": on_target,
         "off_target": off_target,
         "blocked": blocked,
+        "goals": goals,
     }
-
 
 def average_duration(records):
     durations = []
@@ -452,197 +440,64 @@ def _metric_table(
 ):
     rows = []
 
-    present_categories = list(
-        category_counts(
-            records,
-            key,
-        ).keys()
+    present_categories = list(category_counts(records, key).keys())
+    categories = (
+        list(preferred_order)
+        if preferred_order
+        else ordered_categories(records, key)
     )
-
-    if preferred_order:
-        categories = list(
-            preferred_order
-        )
-    else:
-        categories = ordered_categories(
-            records,
-            key,
-        )
-
     matched_present = set()
+
+    def build_row(category, subset):
+        m = outcome_metrics(subset)
+        total = m["total"]
+        return {
+            category_name: category,
+            "Attempts": total,
+            "On Target": fmt_rate(m["on_target"], total),
+            "Off Target": fmt_rate(m["off_target"], total),
+            "Blocked": fmt_rate(m["blocked"], total),
+            "Goals": m["goals"],
+            "Goal Conversion": fmt_rate(m["goals"], total),
+            "On Target Conversion": fmt_rate(m["goals"], m["on_target"]),
+            "_On Target %": rate(m["on_target"], total),
+            "_Off Target %": rate(m["off_target"], total),
+            "_Blocked %": rate(m["blocked"], total),
+            "_Goal %": rate(m["goals"], total),
+            "_On Target Count": m["on_target"],
+            "_Off Target Count": m["off_target"],
+            "_Blocked Count": m["blocked"],
+            "_Goal Count": m["goals"],
+        }
 
     for category in categories:
         alias_values = (
-            category_aliases.get(
-                category,
-                [category],
-            )
+            category_aliases.get(category, [category])
             if category_aliases
             else [category]
         )
-
-        normalized_aliases = {
-            _norm(value)
-            for value
-            in alias_values
-        }
+        normalized_aliases = {_norm(value) for value in alias_values}
 
         subset = [
             record
             for record in records
-            if any(
-                event_has_value(
-                    record,
-                    key,
-                    alias,
-                )
-                for alias
-                in alias_values
-            )
+            if any(event_has_value(record, key, alias) for alias in alias_values)
         ]
 
         for present in present_categories:
             if _norm(present) in normalized_aliases:
-                matched_present.add(
-                    _norm(present)
-                )
+                matched_present.add(_norm(present))
 
-        m = outcome_metrics(
-            subset
-        )
-        total = m["total"]
+        rows.append(build_row(category, subset))
 
-        rows.append(
-            {
-                category_name:
-                    category,
-
-                "Attempts":
-                    total,
-
-                "On Target":
-                    fmt_rate(
-                        m["on_target"],
-                        total,
-                    ),
-
-                "Off Target":
-                    fmt_rate(
-                        m["off_target"],
-                        total,
-                    ),
-
-                "Blocked":
-                    fmt_rate(
-                        m["blocked"],
-                        total,
-                    ),
-
-                "_On Target %":
-                    rate(
-                        m["on_target"],
-                        total,
-                    ),
-
-                "_Off Target %":
-                    rate(
-                        m["off_target"],
-                        total,
-                    ),
-
-                "_Blocked %":
-                    rate(
-                        m["blocked"],
-                        total,
-                    ),
-
-                "_On Target Count":
-                    m["on_target"],
-
-                "_Off Target Count":
-                    m["off_target"],
-
-                "_Blocked Count":
-                    m["blocked"],
-            }
-        )
-
-    # Preserve unexpected/new Sportscode values too, so future coding
-    # categories are never silently dropped.
     if preferred_order:
         for present in present_categories:
             if _norm(present) in matched_present:
                 continue
+            subset = records_with_category(records, key, present)
+            rows.append(build_row(present, subset))
 
-            subset = records_with_category(
-                records,
-                key,
-                present,
-            )
-
-            m = outcome_metrics(
-                subset
-            )
-            total = m["total"]
-
-            rows.append(
-                {
-                    category_name:
-                        present,
-
-                    "Attempts":
-                        total,
-
-                    "On Target":
-                        fmt_rate(
-                            m["on_target"],
-                            total,
-                        ),
-
-                    "Off Target":
-                        fmt_rate(
-                            m["off_target"],
-                            total,
-                        ),
-
-                    "Blocked":
-                        fmt_rate(
-                            m["blocked"],
-                            total,
-                        ),
-
-                    "_On Target %":
-                        rate(
-                            m["on_target"],
-                            total,
-                        ),
-
-                    "_Off Target %":
-                        rate(
-                            m["off_target"],
-                            total,
-                        ),
-
-                    "_Blocked %":
-                        rate(
-                            m["blocked"],
-                            total,
-                        ),
-
-                    "_On Target Count":
-                        m["on_target"],
-
-                    "_Off Target Count":
-                        m["off_target"],
-
-                    "_Blocked Count":
-                        m["blocked"],
-                }
-            )
-
-    return pd.DataFrame(
-        rows
-    )
+    return pd.DataFrame(rows)
 
 def _display_df(
     df,
@@ -706,82 +561,36 @@ def _metric_chart_long_df(
             "On Target",
             "Off Target",
             "Blocked",
+            "Goals",
         ]
 
     metric_map = {
-        "On Target": (
-            "_On Target %",
-            "_On Target Count",
-        ),
-        "Off Target": (
-            "_Off Target %",
-            "_Off Target Count",
-        ),
-        "Blocked": (
-            "_Blocked %",
-            "_Blocked Count",
-        ),
+        "On Target": ("_On Target %", "_On Target Count"),
+        "Off Target": ("_Off Target %", "_Off Target Count"),
+        "Blocked": ("_Blocked %", "_Blocked Count"),
+        "Goals": ("_Goal %", "_Goal Count"),
     }
 
     rows = []
-
     for _, row in df.iterrows():
-        attempts = int(
-            row.get(
-                "Attempts",
-                0,
-            )
-        )
-
+        attempts = int(row.get("Attempts", 0))
         for metric in metrics:
-            pct_col, count_col = (
-                metric_map[metric]
-            )
-
-            pct = float(
-                row.get(
-                    pct_col,
-                    0.0,
-                )
-            )
-
-            count = int(
-                row.get(
-                    count_col,
-                    0,
-                )
-            )
-
-            label = (
-                "—"
-                if attempts == 0
-                else (
-                    f"{pct:.0f}% "
-                    f"({count}/{attempts})"
-                )
-            )
-
+            pct_col, count_col = metric_map[metric]
+            pct = float(row.get(pct_col, 0.0))
+            count = int(row.get(count_col, 0))
+            label = "—" if attempts == 0 else f"{pct:.0f}% ({count}/{attempts})"
             rows.append(
                 {
-                    category_col:
-                        row[category_col],
-                    "Metric":
-                        metric,
-                    "Rate":
-                        pct,
-                    "Attempts":
-                        attempts,
-                    "Count":
-                        count,
-                    "Label":
-                        label,
+                    category_col: row[category_col],
+                    "Metric": metric,
+                    "Rate": pct,
+                    "Attempts": attempts,
+                    "Count": count,
+                    "Label": label,
                 }
             )
 
-    return pd.DataFrame(
-        rows
-    )
-
+    return pd.DataFrame(rows)
 
 def render_metric_chart(
     df,
@@ -799,6 +608,7 @@ def render_metric_chart(
             "On Target",
             "Off Target",
             "Blocked",
+            "Goals",
         ]
 
     chart_df = (
@@ -983,80 +793,80 @@ def render_kpis(records, phase):
     m = outcome_metrics(records)
     total = m["total"]
 
-    attack_type, attack_count = most_common(
-        records,
-        "attack_type",
-    )
-    time_period, time_count = most_common(
-        records,
-        "time_period",
-    )
+    attack_type, attack_count = most_common(records, "attack_type")
+    time_period, time_count = most_common(records, "time_period")
     final_attempt_player, final_attempt_player_count = most_common(
         records,
         "final_attempt_player",
     )
-    assist, assist_count = most_common(
-        records,
-        "assist",
+    assist, assist_count = most_common(records, "assist")
+
+    goal_records = [
+        record
+        for record in records
+        if event_has_value(record, "outcome", "GOAL")
+    ]
+    top_goal_player, top_goal_player_count = most_common(
+        goal_records,
+        "final_attempt_player",
+    )
+
+    goal_label = "Goals" if phase == "offensive" else "Goals Conceded"
+    conversion_label = (
+        "Goal Conversion"
+        if phase == "offensive"
+        else "Goal Conceded Conversion"
+    )
+    on_target_conversion_label = (
+        "On Target Conversion"
+        if phase == "offensive"
+        else "On Target Conceded Conversion"
+    )
+    top_goal_player_label = (
+        "Top Scorer"
+        if phase == "offensive"
+        else "Most Common Scorer Against"
     )
 
     st.markdown("### Key KPIs")
 
     cols = st.columns(4)
-
     cols[0].metric(
-        "Final Attempts"
-        if phase == "offensive"
-        else "Final Attempts Faced",
+        "Final Attempts" if phase == "offensive" else "Final Attempts Faced",
         total,
     )
+    cols[1].metric("On Target", fmt_rate(m["on_target"], total))
+    cols[2].metric("Off Target", fmt_rate(m["off_target"], total))
+    cols[3].metric("Blocked", fmt_rate(m["blocked"], total))
 
-    cols[1].metric(
-        "On Target",
-        fmt_rate(
-            m["on_target"],
-            total,
-        ),
-    )
-
+    cols = st.columns(4)
+    cols[0].metric(goal_label, m["goals"])
+    cols[1].metric(conversion_label, fmt_rate(m["goals"], total))
     cols[2].metric(
-        "Off Target",
-        fmt_rate(
-            m["off_target"],
-            total,
-        ),
+        on_target_conversion_label,
+        fmt_rate(m["goals"], m["on_target"]),
     )
-
     cols[3].metric(
-        "Blocked",
-        fmt_rate(
-            m["blocked"],
-            total,
+        top_goal_player_label,
+        top_goal_player,
+        help=(
+            f"{top_goal_player_count}/{m['goals']} goals"
+            if top_goal_player != "-" and m["goals"]
+            else None
         ),
     )
 
     cols = st.columns(4)
-
     cols[0].metric(
         "Most Common Attack Type",
         attack_type,
-        help=(
-            f"{attack_count}/{total} attempts"
-            if attack_type != "-"
-            else None
-        ),
+        help=f"{attack_count}/{total} attempts" if attack_type != "-" else None,
     )
-
     cols[1].metric(
         "Most Common Period",
         time_period,
-        help=(
-            f"{time_count}/{total} attempts"
-            if time_period != "-"
-            else None
-        ),
+        help=f"{time_count}/{total} attempts" if time_period != "-" else None,
     )
-
     cols[2].metric(
         "Most Common Final Attempt Player",
         final_attempt_player,
@@ -1066,26 +876,31 @@ def render_kpis(records, phase):
             else None
         ),
     )
-
     cols[3].metric(
         "Most Common Assist Player",
         assist,
-        help=(
-            f"{assist_count}/{total} attempts"
-            if assist != "-"
-            else None
-        ),
+        help=f"{assist_count}/{total} attempts" if assist != "-" else None,
     )
 
     if _ACTIVE_REPORT_CONTEXT is not None:
-        item=create_kpi_report_item(
+        item = create_kpi_report_item(
             module="final_attempt",
             section_title="Key KPIs",
             kpis=[
-                {"label": "Final Attempts" if phase == "offensive" else "Final Attempts Faced", "value": total},
+                {
+                    "label": "Final Attempts" if phase == "offensive" else "Final Attempts Faced",
+                    "value": total,
+                },
                 {"label": "On Target", "value": fmt_rate(m["on_target"], total)},
                 {"label": "Off Target", "value": fmt_rate(m["off_target"], total)},
                 {"label": "Blocked", "value": fmt_rate(m["blocked"], total)},
+                {"label": goal_label, "value": m["goals"]},
+                {"label": conversion_label, "value": fmt_rate(m["goals"], total)},
+                {
+                    "label": on_target_conversion_label,
+                    "value": fmt_rate(m["goals"], m["on_target"]),
+                },
+                {"label": top_goal_player_label, "value": top_goal_player},
                 {"label": "Most Common Attack Type", "value": attack_type},
                 {"label": "Most Common Period", "value": time_period},
                 {"label": "Most Common Final Attempt Player", "value": final_attempt_player},
@@ -1093,12 +908,10 @@ def render_kpis(records, phase):
             ],
             context=_ACTIVE_REPORT_CONTEXT,
         )
-        render_add_to_report_button(item,key=f"report_final_attempt_kpis_{item['id']}")
-
-
-# ============================================================
-# TIME PROFILE
-# ============================================================
+        render_add_to_report_button(
+            item,
+            key=f"report_final_attempt_kpis_{item['id']}",
+        )
 
 def render_time_profile(records):
     st.markdown("### Time Profile")
@@ -1204,7 +1017,17 @@ def render_time_profile(records):
                 "On Target": "—",
                 "Off Target": "—",
                 "Blocked": "—",
+                "Goals": 0,
+                "Goal Conversion": "—",
+                "On Target Conversion": "—",
                 "_On Target %": 0.0,
+                "_Off Target %": 0.0,
+                "_Blocked %": 0.0,
+                "_Goal %": 0.0,
+                "_On Target Count": 0,
+                "_Off Target Count": 0,
+                "_Blocked Count": 0,
+                "_Goal Count": 0,
             }
 
         completed_rows.append(row)
@@ -1634,6 +1457,203 @@ def render_set_plays(records):
                 "Free Kick Type",
             )
 
+
+# ============================================================
+# GOAL ANALYSIS
+# ============================================================
+
+def _goal_breakdown_table(
+    records,
+    key,
+    category_name,
+    preferred_order=None,
+    display_name_fn=None,
+):
+    goal_records = [
+        record
+        for record in records
+        if event_has_value(record, "outcome", "GOAL")
+    ]
+
+    categories = ordered_categories(goal_records, key, preferred_order)
+    rows = []
+
+    for category in categories:
+        goal_subset = records_with_category(goal_records, key, category)
+        attempt_subset = records_with_category(records, key, category)
+        label = display_name_fn(category) if display_name_fn else category
+        rows.append(
+            {
+                category_name: label,
+                "Goals": len(goal_subset),
+                "Attempts": len(attempt_subset),
+                "Conversion": fmt_rate(len(goal_subset), len(attempt_subset)),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def _render_goal_breakdown(
+    records,
+    key,
+    category_name,
+    title,
+    preferred_order=None,
+    display_name_fn=None,
+    report_key=None,
+):
+    df = _goal_breakdown_table(
+        records,
+        key,
+        category_name,
+        preferred_order,
+        display_name_fn,
+    )
+
+    if df.empty:
+        return
+
+    st.markdown(f"#### {title}")
+
+    fig = px.bar(
+        df,
+        x=category_name,
+        y="Goals",
+        text="Goals",
+        hover_data={"Attempts": True, "Conversion": True},
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(
+        height=310,
+        margin=dict(l=20, r=20, t=10, b=20),
+        xaxis_title="",
+        yaxis_title="Goals",
+        showlegend=False,
+    )
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        chart_item = create_plotly_report_item(
+            module="final_attempt",
+            section_title=title,
+            figure=fig,
+            context=_ACTIVE_REPORT_CONTEXT,
+        )
+        render_add_to_report_button(
+            chart_item,
+            key=f"report_final_attempt_goal_chart_{report_key or key}_{chart_item['id']}",
+        )
+
+    st.dataframe(
+        df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        table_item = create_table_report_item(
+            module="final_attempt",
+            section_title=f"{title} — Table",
+            dataframe=df,
+            context=_ACTIVE_REPORT_CONTEXT,
+        )
+        render_add_to_report_button(
+            table_item,
+            key=f"report_final_attempt_goal_table_{report_key or key}_{table_item['id']}",
+        )
+
+
+def render_goal_analysis(records, phase):
+    goal_records = [
+        record
+        for record in records
+        if event_has_value(record, "outcome", "GOAL")
+    ]
+
+    title = "Goal Analysis" if phase == "offensive" else "Goals Conceded Analysis"
+    st.markdown(f"### {title}")
+
+    if not goal_records:
+        st.info("No goals coded in the currently filtered Final Attempt events.")
+        return
+
+    total = len(records)
+    on_target = count_value(records, "outcome", "ON TARGET")
+    goal_period, goal_period_count = most_common(goal_records, "time_period")
+
+    cols = st.columns(4)
+    cols[0].metric(
+        "Goals" if phase == "offensive" else "Goals Conceded",
+        len(goal_records),
+    )
+    cols[1].metric(
+        "Goal Conversion" if phase == "offensive" else "Goal Conceded Conversion",
+        fmt_rate(len(goal_records), total),
+    )
+    cols[2].metric(
+        "On Target Conversion" if phase == "offensive" else "On Target Conceded Conversion",
+        fmt_rate(len(goal_records), on_target),
+    )
+    cols[3].metric(
+        "Most Common Goal Period",
+        goal_period,
+        help=(
+            f"{goal_period_count}/{len(goal_records)} goals"
+            if goal_period != "-"
+            else None
+        ),
+    )
+
+    st.caption(
+        "GOAL is an additional outcome flag on the same Final Attempt event and does not increase the Final Attempt count."
+    )
+
+    _render_goal_breakdown(
+        records,
+        "time_period",
+        "Period",
+        "Goals by Time Period",
+        TIME_PERIODS,
+        report_key="time_period",
+    )
+    _render_goal_breakdown(
+        records,
+        "attack_type",
+        "Attack Type",
+        "Goals by Attack Type",
+        ATTACK_TYPE_ORDER,
+        report_key="attack_type",
+    )
+    _render_goal_breakdown(
+        records,
+        "final_attempt_zone",
+        "Final Attempt Zone",
+        "Goals by Final Attempt Zone",
+        report_key="final_attempt_zone",
+    )
+    _render_goal_breakdown(
+        records,
+        "final_attempt_player",
+        "Player",
+        "Goals by Final Attempt Player",
+        report_key="goal_player",
+    )
+
+    set_play_records = records_with_category(records, "attack_type", "SET PLAY")
+    if any(event_has_value(record, "outcome", "GOAL") for record in set_play_records):
+        _render_goal_breakdown(
+            set_play_records,
+            "set_play_type",
+            "Set Play",
+            "Goals by Set Play Type",
+            SET_PLAY_ORDER,
+            _set_play_display_name,
+            report_key="set_play_type",
+        )
 
 # ============================================================
 # SPATIAL ANALYSIS
@@ -2850,19 +2870,11 @@ def _player_table(
 ):
     rows = []
 
-    for player in ordered_categories(
-        records,
-        key,
-    ):
+    for player in ordered_categories(records, key):
         if _norm(player) == "OTHER":
             continue
 
-        subset = records_with_category(
-            records,
-            key,
-            player,
-        )
-
+        subset = records_with_category(records, key, player)
         m = outcome_metrics(subset)
         total = m["total"]
 
@@ -2870,23 +2882,16 @@ def _player_table(
             {
                 player_column: player,
                 metric_label: total,
-                "On Target": fmt_rate(
-                    m["on_target"],
-                    total,
-                ),
-                "Off Target": fmt_rate(
-                    m["off_target"],
-                    total,
-                ),
-                "Blocked": fmt_rate(
-                    m["blocked"],
-                    total,
-                ),
+                "On Target": fmt_rate(m["on_target"], total),
+                "Off Target": fmt_rate(m["off_target"], total),
+                "Blocked": fmt_rate(m["blocked"], total),
+                "Goals": m["goals"],
+                "Goal Conversion": fmt_rate(m["goals"], total),
+                "On Target Conversion": fmt_rate(m["goals"], m["on_target"]),
             }
         )
 
     return pd.DataFrame(rows)
-
 
 def render_players(records):
     st.markdown(
@@ -3187,6 +3192,13 @@ def render_final_attempt_analysis(
 
     render_time_profile(
         records,
+    )
+
+    st.markdown("---")
+
+    render_goal_analysis(
+        records,
+        phase,
     )
 
     st.markdown("---")

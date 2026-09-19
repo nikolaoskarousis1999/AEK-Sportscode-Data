@@ -86,6 +86,14 @@ FINAL_ATTEMPT_TIME_PERIODS = [
 ]
 
 
+FILTER_WIDGET_PREFIXES = (
+    "corner_",
+    "free_kick_",
+    "throw_in_",
+    "final_attempt_",
+)
+
+
 # ============================================================
 # HELPERS
 # ============================================================
@@ -217,7 +225,7 @@ def render_final_attempt_module(
             analysis,
             phase,
             analysis_scope,
-            report_context=report_context,
+            report_context,
         )
 
     except TypeError:
@@ -548,29 +556,58 @@ else:
 
 
 # ============================================================
-# REPORT RESET WHEN PHASE CHANGES
+# RESET FILTERS WHEN ANALYSIS CONTEXT CHANGES
 # ============================================================
 
-previous_report_phase = (
+def _clear_analysis_filter_state():
+    for state_key in list(st.session_state.keys()):
+        if state_key.startswith(FILTER_WIDGET_PREFIXES):
+            st.session_state.pop(
+                state_key,
+                None,
+            )
+
+
+if (
+    selected_scope == "All Matches Analysis"
+    and selected_match_ids is None
+):
+    selected_match_ids_context = (
+        "__ALL_MATCHES__",
+    )
+elif selected_match_ids is None:
+    selected_match_ids_context = None
+else:
+    selected_match_ids_context = tuple(
+        selected_match_ids
+    )
+
+
+current_filter_context = (
+    selected_scope,
+    selected_event_family,
+    selected_phase,
+    selected_competition_id,
+    selected_match_id,
+    selected_match_ids_context,
+)
+
+previous_filter_context = (
     st.session_state.get(
-        "_previous_report_phase"
+        "_analysis_filter_context"
     )
 )
 
-if previous_report_phase is None:
-    st.session_state[
-        "_previous_report_phase"
-    ] = selected_phase
-
-elif (
-    previous_report_phase
-    != selected_phase
+if (
+    previous_filter_context is not None
+    and previous_filter_context
+    != current_filter_context
 ):
-    clear_all_reports()
+    _clear_analysis_filter_state()
 
-    st.session_state[
-        "_previous_report_phase"
-    ] = selected_phase
+st.session_state[
+    "_analysis_filter_context"
+] = current_filter_context
 
 
 # ============================================================
@@ -1084,14 +1121,14 @@ elif (
         "Player Filters"
     ):
         active_filters[
-            "shooter"
+            "final_attempt_player"
         ] = st.multiselect(
             "Final Attempt Player",
             get_filter_options(
                 base_records,
-                "shooter",
+                "final_attempt_player",
             ),
-            key="final_attempt_shooter",
+            key="final_attempt_player",
         )
 
         active_filters[
@@ -1144,65 +1181,6 @@ filtered_analysis = {
     "records":
         filtered_records,
 }
-
-# ============================================================
-# REPORT RESET WHEN ANALYSIS CONTEXT / FILTERS CHANGE
-# ============================================================
-
-current_report_context_signature = (
-    selected_scope,
-    selected_event_family,
-    selected_phase,
-    selected_competition_id,
-    selected_match_id,
-    tuple(
-        sorted(
-            selected_match_ids
-        )
-    )
-    if isinstance(
-        selected_match_ids,
-        list,
-    )
-    else selected_match_ids,
-    tuple(
-        sorted(
-            (
-                key,
-                tuple(value)
-                if isinstance(
-                    value,
-                    list,
-                )
-                else value,
-            )
-            for key, value
-            in active_filters.items()
-        )
-    ),
-)
-
-previous_report_context_signature = (
-    st.session_state.get(
-        "_previous_report_context_signature"
-    )
-)
-
-if previous_report_context_signature is None:
-    st.session_state[
-        "_previous_report_context_signature"
-    ] = current_report_context_signature
-
-elif (
-    previous_report_context_signature
-    != current_report_context_signature
-):
-    clear_all_reports()
-
-    st.session_state[
-        "_previous_report_context_signature"
-    ] = current_report_context_signature
-
 
 report_context = build_report_context(
     event_family=selected_event_family,
@@ -1285,5 +1263,5 @@ elif (
         filtered_analysis,
         selected_phase,
         selected_scope,
-        report_context=report_context,
+        report_context,
     )

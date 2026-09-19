@@ -127,6 +127,63 @@ def get_opponent(
     return normalized_folder
 
 
+def get_venue_from_match_folder(
+    match_folder: str,
+) -> str | None:
+    """
+    Infer AEK venue from the Google Drive match-folder name.
+
+    Supported examples:
+        AEK-Levski           -> HOME
+        Levski-AEK           -> AWAY
+        MD1_AEK-Iraklis      -> HOME
+        MD2_Kifisia-AEK      -> AWAY
+
+    Returns None when the folder cannot be resolved safely.
+    """
+    normalized_folder = (
+        normalize_spaces(
+            match_folder
+        )
+        or match_folder
+    )
+
+    parts = [
+        part.strip()
+        for part in normalized_folder.split("-")
+        if part.strip()
+    ]
+
+    if len(parts) != 2:
+        return None
+
+    def contains_aek(part: str) -> bool:
+        tokens = [
+            token
+            for token in re.split(
+                r"[_\s]+",
+                part.upper(),
+            )
+            if token
+        ]
+        return "AEK" in tokens
+
+    left_is_aek = contains_aek(
+        parts[0]
+    )
+    right_is_aek = contains_aek(
+        parts[1]
+    )
+
+    if left_is_aek and not right_is_aek:
+        return "HOME"
+
+    if right_is_aek and not left_is_aek:
+        return "AWAY"
+
+    return None
+
+
 def find_venue(
     events: list[dict],
 ) -> str | None:
@@ -343,6 +400,18 @@ def import_xml(
     venue = find_venue(
         events
     )
+
+    if venue is None:
+        venue = get_venue_from_match_folder(
+            match_folder
+        )
+
+        if venue is not None:
+            print(
+                f"INFO: venue not found in XML for "
+                f"{file_name}; using match folder "
+                f"'{match_folder}' -> {venue}."
+            )
 
     if venue is None:
         print(

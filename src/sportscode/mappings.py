@@ -47,6 +47,7 @@ GROUP_KEY_MAP = {
 
     "TEAM": "opponent",
     "TEAMS": "opponent",
+    "21 Opponent": "opponent",
 
     "OPP PLAYERS":
         "opponent_players",
