@@ -637,6 +637,11 @@ base_records = analysis[
     "records"
 ]
 
+if selected_event_family == "final_attempt":
+    final_attempts.add_final_attempt_box_location(
+        base_records
+    )
+
 
 # ============================================================
 # NO BASE EVENTS
@@ -1115,6 +1120,17 @@ elif (
                 "final_attempt_zone",
             ),
             key="final_attempt_final_zone",
+        )
+
+        active_filters[
+            "final_attempt_box_location"
+        ] = st.multiselect(
+            "Final Attempt Box Location",
+            get_filter_options(
+                base_records,
+                "final_attempt_box_location",
+            ),
+            key="final_attempt_box_location",
         )
 
     with st.sidebar.expander(

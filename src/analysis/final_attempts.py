@@ -17,6 +17,9 @@ from src.reports.report_ui import (
 
 _ACTIVE_REPORT_CONTEXT = None
 
+# Goal charts use a violet accent instead of red.
+GOAL_CHART_COLOR = "#F5C400"
+
 
 TIME_PERIODS = [
     "1-15",
@@ -168,6 +171,28 @@ PASS_TYPE_ORDER = [
 ]
 
 
+FINAL_ATTEMPT_INSIDE_BOX_ZONES = {
+    "L GREEN",
+    "R GREEN",
+    "RED",
+    "ORANGE",
+    "YELLOW",
+}
+
+FINAL_ATTEMPT_OUTSIDE_BOX_ZONES = {
+    "L BLUE",
+    "R BLUE",
+    "PINK",
+    "L GREY",
+    "R GREY",
+}
+
+BOX_LOCATION_ORDER = [
+    "Inside Box",
+    "Outside Box",
+]
+
+
 SET_PLAY_DISPLAY_NAMES = {
     "FREE KICK C": "Free Kick Cross",
     "FREE KICK CROSS": "Free Kick Cross",
@@ -270,6 +295,40 @@ def _clean_values(record, key, include_other=False):
         values.append(text)
 
     return values
+
+
+def get_final_attempt_box_location(record):
+    """
+    Derive Inside Box / Outside Box from the Sportscode
+    Final Attempt colour-zone coding used by the spatial report.
+    """
+    zones = {
+        _norm(value)
+        for value in _clean_values(
+            record,
+            "final_attempt_zone",
+        )
+    }
+
+    if zones & FINAL_ATTEMPT_INSIDE_BOX_ZONES:
+        return "Inside Box"
+
+    if zones & FINAL_ATTEMPT_OUTSIDE_BOX_ZONES:
+        return "Outside Box"
+
+    return None
+
+
+def add_final_attempt_box_location(records):
+    """Add the derived box-location field in-place and return records."""
+    for record in records:
+        box_location = get_final_attempt_box_location(record)
+        if box_location is not None:
+            record["final_attempt_box_location"] = box_location
+        else:
+            record.pop("final_attempt_box_location", None)
+
+    return records
 
 
 def event_has_value(record, key, target):
@@ -656,6 +715,12 @@ def render_metric_chart(
             },
         )
 
+        for trace in fig.data:
+            if trace.name == "Goals":
+                trace.update(
+                    marker_color=GOAL_CHART_COLOR
+                )
+
         fig.update_traces(
             textposition="outside",
             cliponaxis=False,
@@ -714,6 +779,12 @@ def render_metric_chart(
                     metrics,
             },
         )
+
+        for trace in fig.data:
+            if trace.name == "Goals":
+                trace.update(
+                    marker_color=GOAL_CHART_COLOR
+                )
 
         fig.update_traces(
             textposition="outside",
@@ -810,6 +881,10 @@ def render_kpis(records, phase):
         goal_records,
         "final_attempt_player",
     )
+    goal_period, goal_period_count = most_common(
+        goal_records,
+        "time_period",
+    )
 
     goal_label = "Goals" if phase == "offensive" else "Goals Conceded"
     conversion_label = (
@@ -828,7 +903,7 @@ def render_kpis(records, phase):
         else "Most Common Scorer Against"
     )
 
-    st.markdown("### Key KPIs")
+    st.markdown("### KPIs Overview")
 
     cols = st.columns(4)
     cols[0].metric(
@@ -856,18 +931,27 @@ def render_kpis(records, phase):
         ),
     )
 
-    cols = st.columns(4)
+    cols = st.columns(5)
     cols[0].metric(
         "Most Common Attack Type",
         attack_type,
         help=f"{attack_count}/{total} attempts" if attack_type != "-" else None,
     )
     cols[1].metric(
-        "Most Common Period",
+        "Most Common Final Attempt Period",
         time_period,
         help=f"{time_count}/{total} attempts" if time_period != "-" else None,
     )
     cols[2].metric(
+        "Most Common Goal Period",
+        goal_period,
+        help=(
+            f"{goal_period_count}/{m['goals']} goals"
+            if goal_period != "-" and m["goals"]
+            else None
+        ),
+    )
+    cols[3].metric(
         "Most Common Final Attempt Player",
         final_attempt_player,
         help=(
@@ -876,7 +960,7 @@ def render_kpis(records, phase):
             else None
         ),
     )
-    cols[3].metric(
+    cols[4].metric(
         "Most Common Assist Player",
         assist,
         help=f"{assist_count}/{total} attempts" if assist != "-" else None,
@@ -885,7 +969,7 @@ def render_kpis(records, phase):
     if _ACTIVE_REPORT_CONTEXT is not None:
         item = create_kpi_report_item(
             module="final_attempt",
-            section_title="Key KPIs",
+            section_title="KPIs Overview",
             kpis=[
                 {
                     "label": "Final Attempts" if phase == "offensive" else "Final Attempts Faced",
@@ -902,7 +986,8 @@ def render_kpis(records, phase):
                 },
                 {"label": top_goal_player_label, "value": top_goal_player},
                 {"label": "Most Common Attack Type", "value": attack_type},
-                {"label": "Most Common Period", "value": time_period},
+                {"label": "Most Common Final Attempt Period", "value": time_period},
+                {"label": "Most Common Goal Period", "value": goal_period},
                 {"label": "Most Common Final Attempt Player", "value": final_attempt_player},
                 {"label": "Most Common Assist Player", "value": assist},
             ],
@@ -1208,33 +1293,6 @@ def render_counter_context(records):
             "Possession Won Context",
         )
 
-    recovery_df = _metric_table(
-        counter_records,
-        "recovery_zone",
-        "Recovery Zone",
-        RECOVERY_ZONE_ORDER,
-    )
-
-    if not recovery_df.empty:
-        st.markdown(
-            "#### Recovery Zone Effectiveness"
-        )
-
-        render_metric_chart(
-            recovery_df,
-            "Recovery Zone",
-            height=max(
-                360,
-                len(recovery_df) * 52,
-            ),
-        )
-
-        _display_df(
-            recovery_df,
-            "Recovery Zone",
-        )
-
-
 # ============================================================
 # SEQUENCE CONSTRUCTION
 # ============================================================
@@ -1523,7 +1581,11 @@ def _render_goal_breakdown(
         text="Goals",
         hover_data={"Attempts": True, "Conversion": True},
     )
-    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        marker_color=GOAL_CHART_COLOR,
+    )
     fig.update_layout(
         height=310,
         margin=dict(l=20, r=20, t=10, b=20),
@@ -1568,6 +1630,12 @@ def _render_goal_breakdown(
 
 
 def render_goal_analysis(records, phase):
+    """Render only the high-level goal summary.
+
+    Goal breakdowns are intentionally rendered next to the matching
+    attempt analysis later in the page so every variable reads as:
+    attempts first, goals second.
+    """
     goal_records = [
         record
         for record in records
@@ -1612,48 +1680,27 @@ def render_goal_analysis(records, phase):
         "GOAL is an additional outcome flag on the same Final Attempt event and does not increase the Final Attempt count."
     )
 
+
+def render_goal_breakdown_for_variable(
+    records,
+    key,
+    category_name,
+    title,
+    preferred_order=None,
+    display_name_fn=None,
+    report_key=None,
+):
+    """Render the goal view immediately after the matching attempt view."""
     _render_goal_breakdown(
         records,
-        "time_period",
-        "Period",
-        "Goals by Time Period",
-        TIME_PERIODS,
-        report_key="time_period",
-    )
-    _render_goal_breakdown(
-        records,
-        "attack_type",
-        "Attack Type",
-        "Goals by Attack Type",
-        ATTACK_TYPE_ORDER,
-        report_key="attack_type",
-    )
-    _render_goal_breakdown(
-        records,
-        "final_attempt_zone",
-        "Final Attempt Zone",
-        "Goals by Final Attempt Zone",
-        report_key="final_attempt_zone",
-    )
-    _render_goal_breakdown(
-        records,
-        "final_attempt_player",
-        "Player",
-        "Goals by Final Attempt Player",
-        report_key="goal_player",
+        key,
+        category_name,
+        title,
+        preferred_order,
+        display_name_fn,
+        report_key,
     )
 
-    set_play_records = records_with_category(records, "attack_type", "SET PLAY")
-    if any(event_has_value(record, "outcome", "GOAL") for record in set_play_records):
-        _render_goal_breakdown(
-            set_play_records,
-            "set_play_type",
-            "Set Play",
-            "Goals by Set Play Type",
-            SET_PLAY_ORDER,
-            _set_play_display_name,
-            report_key="set_play_type",
-        )
 
 # ============================================================
 # SPATIAL ANALYSIS
@@ -1763,21 +1810,8 @@ def _inside_outside_box_counts(
     #   L BLUE, R BLUE, PINK, L GREY, R GREY
     #
     # This mapping is supported directly by the report totals.
-    inside_labels = [
-        "L GREEN",
-        "R GREEN",
-        "RED",
-        "ORANGE",
-        "YELLOW",
-    ]
-
-    outside_labels = [
-        "L BLUE",
-        "R BLUE",
-        "PINK",
-        "L GREY",
-        "R GREY",
-    ]
+    inside_labels = FINAL_ATTEMPT_INSIDE_BOX_ZONES
+    outside_labels = FINAL_ATTEMPT_OUTSIDE_BOX_ZONES
 
     inside = sum(
         colour_counts.get(
@@ -2111,26 +2145,8 @@ def _report_half_pitch_panel(
     """
 
 
-def render_spatial_analysis(records):
-    st.markdown(
-        "### Spatial Analysis"
-    )
-
-    recovery_counts = _zone_counts(
-        records,
-        "recovery_zone",
-    )
-
-    html = f"""
-<!doctype html>
-<html>
-
-<head>
-
-<meta charset="UTF-8">
-
-<style>
-
+def _get_spatial_css():
+    return f"""
 * {{
     box-sizing: border-box;
 }}
@@ -2742,64 +2758,148 @@ body {{
     }}
 
 }}
+"""
 
+
+def _build_zone_relationship_reference_html(records):
+    spatial_css = _get_spatial_css()
+
+    return f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+{spatial_css}
+
+.spatial-report-grid {{
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}}
+
+.report-panel {{
+    max-width: none;
+    margin: 0;
+}}
+
+.half-pitch {{
+    height: 315px;
+}}
+
+@media (max-width: 850px) {{
+    .spatial-report-grid {{
+        grid-template-columns: 1fr;
+    }}
+}}
 </style>
-
 </head>
-
-
 <body>
-
 <div class="spatial-report-shell">
-
     <div class="spatial-report-grid">
-
-        {_report_recovery_panel(
-            recovery_counts
-        )}
-
-        {_report_half_pitch_panel(
-            records,
-            "assist_zone",
-            "Assist zone (ex. SP)",
-        )}
-
-        {_report_half_pitch_panel(
-            records,
-            "final_attempt_zone",
-            "Final attempt zone",
-        )}
-
+        {_report_half_pitch_panel(records, "assist_zone", "Assist zone (ex. SP)")}
+        {_report_half_pitch_panel(records, "final_attempt_zone", "Final attempt zone")}
     </div>
-
 </div>
-
 </body>
-
 </html>
 """
 
-    st.iframe(
-        html,
-        width="stretch",
-        height=475,
+
+def render_spatial_analysis(records):
+    add_final_attempt_box_location(records)
+
+    st.markdown(
+        "### Spatial Analysis"
     )
 
-    if _ACTIVE_REPORT_CONTEXT is not None:
-        item=create_image_report_item(
-            module="final_attempt",
-            section_title="Spatial Analysis",
-            html=html,
-            context=_ACTIVE_REPORT_CONTEXT,
-            width_px=1400,
-            height_px=475,
+    recovery_counts = _zone_counts(
+        records,
+        "recovery_zone",
+    )
+
+    spatial_css = _get_spatial_css()
+
+    def build_panel_html(panel_html):
+        return f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+{spatial_css}
+
+.spatial-report-grid {{
+    display: block;
+}}
+
+.report-panel {{
+    max-width: none;
+    margin: 0;
+}}
+</style>
+</head>
+<body>
+<div class="spatial-report-shell">
+    <div class="spatial-report-grid">
+        {panel_html}
+    </div>
+</div>
+</body>
+</html>
+"""
+
+    recovery_panel_html = build_panel_html(
+        _report_recovery_panel(
+            recovery_counts
         )
-        render_add_to_report_button(item,key=f"report_final_attempt_spatial_{item['id']}")
+    )
+
+    assist_panel_html = build_panel_html(
+        _report_half_pitch_panel(
+            records,
+            "assist_zone",
+            "Assist zone (ex. SP)",
+        )
+    )
+
+    final_panel_html = build_panel_html(
+        _report_half_pitch_panel(
+            records,
+            "final_attempt_zone",
+            "Final attempt zone",
+        )
+    )
+
+    # Keep the combined spatial visual available for report export.
+    combined_html = f"""
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+{spatial_css}
+</style>
+</head>
+<body>
+<div class="spatial-report-shell">
+    <div class="spatial-report-grid">
+        {_report_recovery_panel(recovery_counts)}
+        {_report_half_pitch_panel(records, "assist_zone", "Assist zone (ex. SP)")}
+        {_report_half_pitch_panel(records, "final_attempt_zone", "Final attempt zone")}
+    </div>
+</div>
+</body>
+</html>
+"""
 
     st.caption(
         "Spatial layout follows the Sportscode Final Attempts report. "
         "Counts are calculated from the currently filtered events."
     )
+
+    # ========================================================
+    # RECOVERY ZONE
+    # ========================================================
 
     st.markdown(
         "#### Recovery Zone Effectiveness"
@@ -2812,14 +2912,43 @@ body {{
         RECOVERY_ZONE_ORDER,
     )
 
-    _display_df(
-        recovery_df,
-        "Recovery Zone",
-        report_section_title="Recovery Zone Effectiveness",
-        report_key="spatial_recovery_zone",
+    recovery_map_col, recovery_table_col = st.columns(
+        [0.9, 1.6],
+        gap="large",
     )
 
+    with recovery_map_col:
+        st.iframe(
+            recovery_panel_html,
+            width="stretch",
+            height=455,
+        )
+
+    with recovery_table_col:
+        _display_df(
+            recovery_df,
+            "Recovery Zone",
+            report_section_title="Recovery Zone Effectiveness",
+            report_key="spatial_recovery_zone",
+        )
+
+    if not recovery_df.empty:
+        render_metric_chart(
+            recovery_df,
+            "Recovery Zone",
+            height=max(
+                360,
+                len(recovery_df) * 52,
+            ),
+            report_section_title="Recovery Zone Effectiveness",
+            report_key="spatial_recovery_zone_chart",
+        )
+
     st.write("")
+
+    # ========================================================
+    # ASSIST ZONE
+    # ========================================================
 
     st.markdown(
         "#### Assist Zone Effectiveness"
@@ -2831,14 +2960,31 @@ body {{
         "Assist Zone",
     )
 
-    _display_df(
-        assist_df,
-        "Assist Zone",
-        report_section_title="Assist Zone Effectiveness",
-        report_key="spatial_assist_zone",
+    assist_map_col, assist_table_col = st.columns(
+        [0.9, 1.6],
+        gap="large",
     )
 
+    with assist_map_col:
+        st.iframe(
+            assist_panel_html,
+            width="stretch",
+            height=455,
+        )
+
+    with assist_table_col:
+        _display_df(
+            assist_df,
+            "Assist Zone",
+            report_section_title="Assist Zone Effectiveness",
+            report_key="spatial_assist_zone",
+        )
+
     st.write("")
+
+    # ========================================================
+    # FINAL ATTEMPT ZONE
+    # ========================================================
 
     st.markdown(
         "#### Final Attempt Zone Effectiveness"
@@ -2850,12 +2996,57 @@ body {{
         "Final Attempt Zone",
     )
 
-    _display_df(
-        final_df,
-        "Final Attempt Zone",
-        report_section_title="Final Attempt Zone Effectiveness",
-        report_key="spatial_final_zone",
+    final_map_col, final_table_col = st.columns(
+        [0.9, 1.6],
+        gap="large",
     )
+
+    with final_map_col:
+        st.iframe(
+            final_panel_html,
+            width="stretch",
+            height=455,
+        )
+
+    with final_table_col:
+        _display_df(
+            final_df,
+            "Final Attempt Zone",
+            report_section_title="Final Attempt Zone Effectiveness",
+            report_key="spatial_final_zone",
+        )
+
+        st.markdown(
+            "#### Inside / Outside Box Effectiveness"
+        )
+
+        box_df = _metric_table(
+            records,
+            "final_attempt_box_location",
+            "Box Location",
+            BOX_LOCATION_ORDER,
+        )
+
+        _display_df(
+            box_df,
+            "Box Location",
+            report_section_title="Inside / Outside Box Effectiveness",
+            report_key="spatial_box_location",
+        )
+
+    if _ACTIVE_REPORT_CONTEXT is not None:
+        item = create_image_report_item(
+            module="final_attempt",
+            section_title="Spatial Analysis",
+            html=combined_html,
+            context=_ACTIVE_REPORT_CONTEXT,
+            width_px=1400,
+            height_px=475,
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_final_attempt_spatial_{item['id']}",
+        )
 
 
 # ============================================================
@@ -3131,11 +3322,38 @@ def render_relationships(
                 }
             )
 
-        relationship_df=pd.DataFrame(rows)
-        st.dataframe(relationship_df,hide_index=True,width="stretch")
-        if _ACTIVE_REPORT_CONTEXT is not None:
-            item=create_table_report_item(module="final_attempt",section_title="Assist Zone → Final Attempt Zone",dataframe=relationship_df,context=_ACTIVE_REPORT_CONTEXT)
-            render_add_to_report_button(item,key=f"report_final_attempt_zone_relation_{item['id']}")
+        relationship_df = pd.DataFrame(rows)
+
+        zone_map_col, relationship_table_col = st.columns(
+            [1.2, 1.6],
+            gap="large",
+        )
+
+        with zone_map_col:
+            st.iframe(
+                _build_zone_relationship_reference_html(records),
+                width="stretch",
+                height=470,
+            )
+
+        with relationship_table_col:
+            st.dataframe(
+                relationship_df,
+                hide_index=True,
+                width="stretch",
+            )
+
+            if _ACTIVE_REPORT_CONTEXT is not None:
+                item = create_table_report_item(
+                    module="final_attempt",
+                    section_title="Assist Zone → Final Attempt Zone",
+                    dataframe=relationship_df,
+                    context=_ACTIVE_REPORT_CONTEXT,
+                )
+                render_add_to_report_button(
+                    item,
+                    key=f"report_final_attempt_zone_relation_{item['id']}",
+                )
 
 
 # ============================================================
@@ -3183,6 +3401,9 @@ def render_final_attempt_analysis(
         key="create_final_attempt_report",
     )
 
+    # --------------------------------------------------------
+    # OVERVIEW
+    # --------------------------------------------------------
     render_kpis(
         records,
         phase,
@@ -3190,21 +3411,38 @@ def render_final_attempt_analysis(
 
     st.markdown("---")
 
+    # --------------------------------------------------------
+    # TIME: ATTEMPTS -> GOALS
+    # --------------------------------------------------------
     render_time_profile(
         records,
     )
 
-    st.markdown("---")
-
-    render_goal_analysis(
+    render_goal_breakdown_for_variable(
         records,
-        phase,
+        "time_period",
+        "Period",
+        "Goals by Time Period",
+        TIME_PERIODS,
+        report_key="time_period",
     )
 
     st.markdown("---")
 
+    # --------------------------------------------------------
+    # ATTACK TYPE: ATTEMPTS -> GOALS
+    # --------------------------------------------------------
     render_attack_type(
         records,
+    )
+
+    render_goal_breakdown_for_variable(
+        records,
+        "attack_type",
+        "Attack Type",
+        "Goals by Attack Type",
+        ATTACK_TYPE_ORDER,
+        report_key="attack_type",
     )
 
     render_organized_attack(
@@ -3217,6 +3455,37 @@ def render_final_attempt_analysis(
 
     st.markdown("---")
 
+    # --------------------------------------------------------
+    # SET PLAYS: ATTEMPTS -> GOALS
+    # --------------------------------------------------------
+    render_set_plays(
+        records,
+    )
+
+    set_play_records = records_with_category(
+        records,
+        "attack_type",
+        "SET PLAY",
+    )
+    if any(
+        event_has_value(record, "outcome", "GOAL")
+        for record in set_play_records
+    ):
+        render_goal_breakdown_for_variable(
+            set_play_records,
+            "set_play_type",
+            "Set Play",
+            "Goals by Set Play Type",
+            SET_PLAY_ORDER,
+            _set_play_display_name,
+            report_key="set_play_type",
+        )
+
+    st.markdown("---")
+
+    # --------------------------------------------------------
+    # SEQUENCE CONSTRUCTION
+    # --------------------------------------------------------
     render_sequence_construction(
         records,
         analysis_scope,
@@ -3224,20 +3493,36 @@ def render_final_attempt_analysis(
 
     st.markdown("---")
 
-    render_set_plays(
-        records,
-    )
-
-    st.markdown("---")
-
+    # --------------------------------------------------------
+    # SPATIAL: ATTEMPTS -> GOALS
+    # --------------------------------------------------------
     render_spatial_analysis(
         records,
     )
 
+    render_goal_breakdown_for_variable(
+        records,
+        "final_attempt_zone",
+        "Final Attempt Zone",
+        "Goals by Final Attempt Zone",
+        report_key="final_attempt_zone",
+    )
+
     st.markdown("---")
 
+    # --------------------------------------------------------
+    # PLAYERS: ATTEMPTS -> GOALS
+    # --------------------------------------------------------
     render_players(
         records,
+    )
+
+    render_goal_breakdown_for_variable(
+        records,
+        "final_attempt_player",
+        "Player",
+        "Goals by Final Attempt Player",
+        report_key="goal_player",
     )
 
     render_relationships(

@@ -476,7 +476,7 @@ def render_kpis(
     )
 
     st.markdown(
-        "### Key KPIs"
+        "### KPIs Overview"
     )
 
     if phase == "defensive":
@@ -707,7 +707,7 @@ def render_kpis(
 
         report_item = create_kpi_report_item(
             module="corner_kick",
-            section_title="Key KPIs",
+            section_title="KPIs Overview",
             kpis=kpi_items,
             context=report_context,
         )
@@ -949,10 +949,14 @@ def render_zone_visualisation(
     records: list[dict],
     phase: str,
     report_context: dict | None = None,
+    show_delivery: bool = True,
+    show_finishing: bool = True,
+    show_heading: bool = True,
 ):
-    st.markdown(
-        "### Zone Visualisation"
-    )
+    if show_heading:
+        st.markdown(
+            "### Zone Visualisation"
+        )
 
     delivery_counts = (
         build_zone_slot_counts(
@@ -979,6 +983,47 @@ def render_zone_visualisation(
     finishing_mapped = sum(
         finishing_counts.values()
     )
+
+    panels = []
+    captions = []
+
+    if show_delivery:
+        panels.append(
+            _zone_panel(
+                "Delivery Zones",
+                delivery_counts,
+                "delivery",
+            )
+        )
+        captions.append(
+            f"""
+            <div>
+                Delivery-zone labels available:
+                <strong>{delivery_mapped}/{total}</strong>
+            </div>
+            """
+        )
+
+    if show_finishing:
+        panels.append(
+            _zone_panel(
+                "Finishing Zones",
+                finishing_counts,
+                "finishing",
+            )
+        )
+        captions.append(
+            f"""
+            <div>
+                Finishing-zone labels available:
+                <strong>{finishing_mapped}/{total}</strong>
+            </div>
+            """
+        )
+
+    grid_columns = max(1, len(panels))
+    panels_html = "".join(panels)
+    captions_html = "".join(captions)
 
     html = f"""
 <!doctype html>
@@ -1021,7 +1066,7 @@ body {{
     display: grid;
 
     grid-template-columns:
-        1fr 1fr;
+        repeat({grid_columns}, 1fr);
 
     gap: 14px;
 }}
@@ -1599,45 +1644,11 @@ body {{
 <div class="zone-shell">
 
     <div class="zone-grid">
-
-        {_zone_panel(
-            "Delivery Zones",
-            delivery_counts,
-            "delivery",
-        )}
-
-        {_zone_panel(
-            "Finishing Zones",
-            finishing_counts,
-            "finishing",
-        )}
-
+        {panels_html}
     </div>
 
-
     <div class="zone-caption">
-
-        <div>
-
-            Delivery-zone labels available:
-
-            <strong>
-                {delivery_mapped}/{total}
-            </strong>
-
-        </div>
-
-
-        <div>
-
-            Finishing-zone labels available:
-
-            <strong>
-                {finishing_mapped}/{total}
-            </strong>
-
-        </div>
-
+        {captions_html}
     </div>
 
 </div>
@@ -1653,9 +1664,16 @@ body {{
     )
 
     if report_context is not None:
+        if show_delivery and show_finishing:
+            section_title = "Zone Visualisation"
+        elif show_delivery:
+            section_title = "Delivery Zone Visualisation"
+        else:
+            section_title = "Finishing Zone Visualisation"
+
         report_item = create_image_report_item(
             module="corner_kick",
-            section_title="Zone Visualisation",
+            section_title=section_title,
             html=html,
             context=report_context,
             width_px=1400,
@@ -1666,6 +1684,7 @@ body {{
             report_item,
             key=(
                 "report_corner_zone_visualisation_"
+                f"{'delivery' if show_delivery and not show_finishing else 'finishing' if show_finishing and not show_delivery else 'both'}_"
                 f"{report_item['id']}"
             ),
         )
@@ -3321,6 +3340,180 @@ def render_zone_effectiveness(
 
 
 # ============================================================
+# CORNER EXECUTION FLOW
+# ============================================================
+
+def render_corner_execution_flow(
+    records: list[dict],
+    phase: str,
+    analysis_scope: str | None = None,
+    report_context: dict | None = None,
+):
+    """Render existing corner content in the sequence of corner execution."""
+    st.markdown("### Corner Execution")
+
+    # 1. TAKER / DEFENSIVE SETUP
+    if phase == "offensive":
+        render_effectiveness_table(
+            title="Taker Effectiveness",
+            records=records,
+            group_key="taker",
+            phase=phase,
+            category_name="Taker",
+            include_unknown=True,
+            report_context=report_context,
+        )
+    else:
+        render_effectiveness_table(
+            title="Opponent Players Effectiveness",
+            records=records,
+            group_key="opponent_players",
+            phase=phase,
+            category_name="Opponent Players",
+            include_unknown=True,
+            report_context=report_context,
+        )
+
+    st.write("")
+
+    # 2. SIDE
+    render_effectiveness_table(
+        title="Side Effectiveness",
+        records=records,
+        group_key="side",
+        phase=phase,
+        category_name="Side",
+        report_context=report_context,
+    )
+
+    st.write("")
+
+    # 3. DELIVERY TYPE
+    st.markdown("#### Delivery Type Effectiveness")
+
+    if analysis_scope in {
+        "Competition Analysis",
+        "All Matches Analysis",
+    }:
+        render_delivery_type_scatter(
+            records,
+            phase,
+            report_context=report_context,
+        )
+
+    render_effectiveness_table(
+        title="",
+        records=records,
+        group_key="delivery_type",
+        phase=phase,
+        category_name="Delivery Type",
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Delivery Type Effectiveness — Table",
+    )
+
+    if phase == "offensive":
+        st.write("")
+        st.markdown("#### Opponent Context")
+        render_effectiveness_table(
+            title="Opponent Organization",
+            records=records,
+            group_key="opponent_organization",
+            phase=phase,
+            category_name="Opponent Organization",
+            report_context=report_context,
+        )
+
+    st.markdown("---")
+
+    # 4. DELIVERY ZONE
+    st.markdown("### Delivery Zone")
+
+    render_zone_visualisation(
+        records,
+        phase,
+        report_context=report_context,
+        show_delivery=True,
+        show_finishing=False,
+        show_heading=False,
+    )
+
+    st.markdown("#### Delivery Zone Effectiveness")
+
+    render_zone_effectiveness_chart(
+        records=records,
+        zone_key="delivery_zone",
+        phase=phase,
+        report_context=report_context,
+    )
+
+    render_zone_table(
+        title="",
+        records=records,
+        zone_key="delivery_zone",
+        phase=phase,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Delivery Zone Summary",
+    )
+
+    st.markdown("---")
+
+    # 5. FIRST CONTACT
+    st.markdown("### First Contact → Outcome")
+
+    render_first_contact_chart(
+        records,
+        phase,
+        report_context=report_context,
+    )
+
+    render_effectiveness_table(
+        title="",
+        records=records,
+        group_key="first_contact",
+        phase=phase,
+        category_name="First Contact",
+        first_contact_table=True,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="First Contact Effectiveness — Table",
+    )
+
+    st.markdown("---")
+
+    # 6. FINISHING ZONE
+    st.markdown("### Finishing Zone")
+
+    render_zone_visualisation(
+        records,
+        phase,
+        report_context=report_context,
+        show_delivery=False,
+        show_finishing=True,
+        show_heading=False,
+    )
+
+    render_zone_table(
+        title="Finishing Zone Summary",
+        records=records,
+        zone_key="finishing_zone",
+        phase=phase,
+        show_title=True,
+        report_context=report_context,
+        report_section_title="Finishing Zone Summary",
+    )
+
+    st.markdown("---")
+
+    # 7. OUTCOME
+    render_outcome_breakdown(
+        records,
+        report_context=report_context,
+    )
+
+
+# ============================================================
 # MAIN RENDER
 # ============================================================
 
@@ -3370,32 +3563,9 @@ def render_corner_kick_analysis(
 
     st.markdown("---")
 
-    render_zone_visualisation(
-        records,
-        phase,
-        report_context=report_context,
-    )
-
-    st.markdown("---")
-
-    render_outcome_breakdown(
-        records,
-        report_context=report_context,
-    )
-
-    st.markdown("---")
-
-    render_effectiveness(
+    render_corner_execution_flow(
         records,
         phase,
         analysis_scope,
-        report_context=report_context,
-    )
-
-    st.markdown("---")
-
-    render_zone_effectiveness(
-        records,
-        phase,
         report_context=report_context,
     )

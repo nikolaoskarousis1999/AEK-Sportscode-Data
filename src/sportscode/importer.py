@@ -65,12 +65,14 @@ def get_opponent(
     Extract the opponent name from a match-folder name.
 
     Supported examples:
-        AEK-Iraklis           -> Iraklis
-        Iraklis-AEK           -> Iraklis
-        MD1_AEK-Iraklis       -> Iraklis
-        MD1_Iraklis-AEK       -> Iraklis
-        MD12_AEK-Levski       -> Levski
-        MD12_Levski-AEK       -> Levski
+        AEK-Iraklis             -> Iraklis
+        Iraklis-AEK             -> Iraklis
+        MD1_AEK-Iraklis         -> Iraklis
+        MD1_Iraklis-AEK         -> Iraklis
+        MD12_AEK-Levski         -> Levski
+        MD12_Levski-AEK         -> Levski
+        PO1_AEK-Levski          -> Levski
+        PO1_Levski-AEK          -> Levski
 
     If the folder name cannot be resolved safely, return the
     original folder name rather than guessing.
@@ -94,7 +96,7 @@ def get_opponent(
 
     for part in parts:
         # Treat AEK as a team token even when the folder part
-        # contains a matchday prefix, e.g. "MD1_AEK".
+        # contains a prefix, e.g. "MD1_AEK" or "PO1_AEK".
         tokens = [
             token
             for token in re.split(
@@ -107,10 +109,10 @@ def get_opponent(
         if "AEK" in tokens:
             continue
 
-        # Remove a leading matchday prefix from the opponent side
-        # if the Drive folder is named like "MD1_Iraklis-AEK".
+        # Remove leading competition-stage prefixes such as:
+        # MD1_, MD2_, MD12_, PO1_, PO2_, etc.
         cleaned_part = re.sub(
-            r"^MD\s*\d+[_\s]*",
+            r"^(?:MD|PO)\s*\d+[_\s]*",
             "",
             part,
             flags=re.IGNORECASE,
@@ -133,11 +135,16 @@ def get_venue_from_match_folder(
     """
     Infer AEK venue from the Google Drive match-folder name.
 
-    Supported examples:
-        AEK-Levski           -> HOME
-        Levski-AEK           -> AWAY
-        MD1_AEK-Iraklis      -> HOME
-        MD2_Kifisia-AEK      -> AWAY
+    AEK first  -> HOME
+    AEK second -> AWAY
+
+    Examples:
+        AEK-Levski              -> HOME
+        Levski-AEK              -> AWAY
+        MD1_AEK-Iraklis         -> HOME
+        MD2_Kifisia-AEK         -> AWAY
+        PO1_AEK-Levski          -> HOME
+        PO1_Levski-AEK          -> AWAY
 
     Returns None when the folder cannot be resolved safely.
     """
@@ -166,11 +173,13 @@ def get_venue_from_match_folder(
             )
             if token
         ]
+
         return "AEK" in tokens
 
     left_is_aek = contains_aek(
         parts[0]
     )
+
     right_is_aek = contains_aek(
         parts[1]
     )
@@ -187,6 +196,15 @@ def get_venue_from_match_folder(
 def find_venue(
     events: list[dict],
 ) -> str | None:
+    """
+    Fallback only.
+
+    If venue cannot be determined from the match-folder name,
+    look for HOME/AWAY inside the XML.
+
+    The folder name is the preferred source because event-level
+    LOCATION values can occasionally be inconsistent.
+    """
     for event in events:
         for label in event["labels"]:
             if label["group_key"] not in {
@@ -397,20 +415,44 @@ def import_xml(
         )
         return
 
-    venue = find_venue(
-        events
+    # ============================================================
+    # MATCH VENUE
+    # ============================================================
+    #
+    # Primary source:
+    # Google Drive match-folder order.
+    #
+    # AEK first  -> HOME
+    # AEK second -> AWAY
+    #
+    # Example:
+    # MD2_AEK-Panserraikos -> HOME
+    # PO1_Levski-AEK       -> AWAY
+    #
+    # XML LOCATION / Venue is only used as a fallback.
+    # ============================================================
+
+    venue = get_venue_from_match_folder(
+        match_folder
     )
 
-    if venue is None:
-        venue = get_venue_from_match_folder(
-            match_folder
+    if venue is not None:
+        print(
+            f"INFO: using match folder "
+            f"'{match_folder}' -> {venue} "
+            f"as the match venue."
+        )
+
+    else:
+        venue = find_venue(
+            events
         )
 
         if venue is not None:
             print(
-                f"INFO: venue not found in XML for "
-                f"{file_name}; using match folder "
-                f"'{match_folder}' -> {venue}."
+                f"INFO: venue could not be inferred from "
+                f"match folder '{match_folder}' for "
+                f"{file_name}; using XML venue -> {venue}."
             )
 
     if venue is None:
@@ -623,7 +665,7 @@ def import_sportscode_drive():
     )
 
     print(
-        f"Connected to Google Drive."
+        "Connected to Google Drive."
     )
 
     print(

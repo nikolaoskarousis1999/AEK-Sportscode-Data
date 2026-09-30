@@ -1278,7 +1278,7 @@ def _build_pdf_labeled_bar_figure(
                 "#FFA1A6",
 
             "Win Set Play":
-                "#FF2D2D",
+                "#F5C400",
         },
     )
 
@@ -1706,7 +1706,25 @@ def render_player_comparison(
         color="Metric",
         barmode="group",
         text="Display",
+        color_discrete_map={
+            "Keep Possession": "#7DBAF2",
+            "Forward": "#0D76C9",
+            "Box Entry": "#FFA1A6",
+            "Win Set Play": "#F5C400",
+        },
     )
+
+    # Force the Player Comparison palette explicitly so Plotly cannot
+    # fall back to its default red for Win Set Play.
+    for trace in fig.data:
+        player_colors = {
+            "Keep Possession": "#7DBAF2",
+            "Forward": "#0D76C9",
+            "Box Entry": "#FFA1A6",
+            "Win Set Play": "#F5C400",
+        }
+        if trace.name in player_colors:
+            trace.marker.color = player_colors[trace.name]
 
     fig.update_traces(
         textposition="outside",
@@ -1959,7 +1977,7 @@ def render_throw_in_analysis(
     # ========================================================
 
     st.markdown(
-        "### Key KPIs"
+        "### KPIs Overview"
     )
 
     col1, col2, col3, col4 = (
@@ -2100,7 +2118,7 @@ def render_throw_in_analysis(
     if report_context is not None:
         kpi_item = create_kpi_report_item(
             module="throw_in",
-            section_title="Key KPIs",
+            section_title="KPIs Overview",
             context=report_context,
             kpis=[
                 {"label": "Total Throw-ins", "value": str(total)},
@@ -2128,29 +2146,29 @@ def render_throw_in_analysis(
         )
 
     # ========================================================
-    # RESULT BREAKDOWN
+    # PLAYER ANALYSIS — WHO TAKES THE THROW
     # ========================================================
 
     st.markdown("---")
 
-    render_result_breakdown(
+    render_player_comparison(
         records,
         report_context=report_context,
     )
 
     # ========================================================
-    # RETENTION BY ZONE
+    # ZONE EFFECTIVENESS — WHERE THE THROW STARTS
     # ========================================================
 
     st.markdown("---")
 
-    render_retention_by_zone(
+    render_zone_effectiveness(
         records,
         report_context=report_context,
     )
 
     # ========================================================
-    # EXECUTION EFFECTIVENESS
+    # EXECUTION EFFECTIVENESS — HOW THE THROW IS EXECUTED
     # ========================================================
 
     st.markdown("---")
@@ -2212,23 +2230,23 @@ def render_throw_in_analysis(
         )
 
     # ========================================================
-    # PLAYER ANALYSIS
+    # RETENTION BY ZONE — IMMEDIATE OUTCOME
     # ========================================================
 
     st.markdown("---")
 
-    render_player_comparison(
+    render_retention_by_zone(
         records,
         report_context=report_context,
     )
 
     # ========================================================
-    # ZONE EFFECTIVENESS
+    # RESULT BREAKDOWN — FINAL RESULT
     # ========================================================
 
     st.markdown("---")
 
-    render_zone_effectiveness(
+    render_result_breakdown(
         records,
         report_context=report_context,
     )

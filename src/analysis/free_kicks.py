@@ -223,7 +223,7 @@ def render_kpis(
     total = m["total"]
     delivery_type, delivery_count = most_common(records, "delivery_type")
 
-    st.markdown("### Key KPIs")
+    st.markdown("### KPIs Overview")
 
     if phase == "defensive":
         opp, opp_count = most_common(records, "opponent_players", include_unknown=True)
@@ -288,7 +288,7 @@ def render_kpis(
 
         report_item = create_kpi_report_item(
             module="free_kick",
-            section_title="Key KPIs",
+            section_title="KPIs Overview",
             kpis=kpi_items,
             context=report_context,
         )
@@ -601,10 +601,22 @@ def _numbered_zone_panel(
 def render_zone_visualisation(
     records,
     report_context: dict | None = None,
+    zone_types=None,
+    show_heading=True,
+    report_section_title=None,
 ):
-    st.markdown(
-        "### Zone Visualisation"
-    )
+    # The same spatial content can be rendered either as the original
+    # three-panel overview or one panel at a time next to the matching
+    # stage of the free-kick execution sequence.
+    if zone_types is None:
+        zone_types = ("origin", "delivery", "finishing")
+    else:
+        zone_types = tuple(zone_types)
+
+    if show_heading:
+        st.markdown(
+            "### Zone Visualisation"
+        )
 
     origin_counts = (
         build_visual_zone_counts(
@@ -647,6 +659,60 @@ def render_zone_visualisation(
         finishing_counts.values()
     )
 
+    panel_html_parts = []
+    caption_html_parts = []
+
+    if "origin" in zone_types:
+        panel_html_parts.append(
+            _origin_zone_panel(origin_counts)
+        )
+        caption_html_parts.append(
+            f"""
+            <div>
+                Origin-zone labels available:
+                <strong>{origin_mapped}/{total}</strong>
+            </div>
+            """
+        )
+
+    if "delivery" in zone_types:
+        panel_html_parts.append(
+            _numbered_zone_panel(
+                "DELIVERY ZONES",
+                delivery_counts,
+                "delivery",
+            )
+        )
+        caption_html_parts.append(
+            f"""
+            <div>
+                Delivery-zone labels available:
+                <strong>{delivery_mapped}/{total}</strong>
+            </div>
+            """
+        )
+
+    if "finishing" in zone_types:
+        panel_html_parts.append(
+            _numbered_zone_panel(
+                "FINISHING ZONES",
+                finishing_counts,
+                "finishing",
+            )
+        )
+        caption_html_parts.append(
+            f"""
+            <div>
+                Finishing-zone labels available:
+                <strong>{finishing_mapped}/{total}</strong>
+            </div>
+            """
+        )
+
+    panels_html = "\n".join(panel_html_parts)
+    captions_html = "\n".join(caption_html_parts)
+    panel_count = max(1, len(panel_html_parts))
+
     html = f"""
 <!doctype html>
 <html>
@@ -679,7 +745,7 @@ body {{
 .fk-zone-grid {{
     display: grid;
     grid-template-columns:
-        1fr 1fr 1fr;
+        repeat({panel_count}, minmax(0, 1fr));
     gap: 10px;
 }}
 
@@ -998,7 +1064,7 @@ body {{
     margin-top: 8px;
     display: grid;
     grid-template-columns:
-        1fr 1fr 1fr;
+        repeat({panel_count}, minmax(0, 1fr));
     gap: 10px;
     font-size: 10px;
     color:
@@ -1027,48 +1093,11 @@ body {{
 <div class="fk-zone-shell">
 
     <div class="fk-zone-grid">
-
-        {_origin_zone_panel(
-            origin_counts,
-        )}
-
-        {_numbered_zone_panel(
-            "DELIVERY ZONES",
-            delivery_counts,
-            "delivery",
-        )}
-
-        {_numbered_zone_panel(
-            "FINISHING ZONES",
-            finishing_counts,
-            "finishing",
-        )}
-
+        {panels_html}
     </div>
 
     <div class="fk-zone-caption">
-
-        <div>
-            Origin-zone labels available:
-            <strong>
-                {origin_mapped}/{total}
-            </strong>
-        </div>
-
-        <div>
-            Delivery-zone labels available:
-            <strong>
-                {delivery_mapped}/{total}
-            </strong>
-        </div>
-
-        <div>
-            Finishing-zone labels available:
-            <strong>
-                {finishing_mapped}/{total}
-            </strong>
-        </div>
-
+        {captions_html}
     </div>
 
 </div>
@@ -1086,7 +1115,10 @@ body {{
     if report_context is not None:
         report_item = create_image_report_item(
             module="free_kick",
-            section_title="Zone Visualisation",
+            section_title=(
+                report_section_title
+                or "Zone Visualisation"
+            ),
             html=html,
             context=report_context,
             width_px=1400,
@@ -1097,6 +1129,7 @@ body {{
             report_item,
             key=(
                 "report_free_kick_zone_visualisation_"
+                f"{'_'.join(zone_types)}_"
                 f"{report_item['id']}"
             ),
         )
@@ -2007,6 +2040,8 @@ def render_free_kick_analysis(
         key="create_free_kick_report",
     )
 
+    # KPIs stay first. Everything below follows the actual free-kick
+    # execution sequence without changing any underlying calculations.
     render_kpis(
         records,
         phase,
@@ -2014,28 +2049,165 @@ def render_free_kick_analysis(
     )
     st.markdown("---")
 
+    # 1) WHO TAKES / DEFENDS THE FREE KICK
+    if phase == "offensive":
+        render_effectiveness_table(
+            "Taker Effectiveness",
+            records,
+            "taker",
+            phase,
+            "Taker",
+            include_unknown=True,
+            report_context=report_context,
+        )
+    else:
+        render_effectiveness_table(
+            "Opponent Players Effectiveness",
+            records,
+            "opponent_players",
+            phase,
+            "Opponent Players",
+            include_unknown=True,
+            report_context=report_context,
+        )
+    st.markdown("---")
+
+    # 2) WHERE THE FREE KICK STARTS
+    st.markdown("### Origin Zone")
     render_zone_visualisation(
         records,
+        report_context=report_context,
+        zone_types=("origin",),
+        show_heading=False,
+        report_section_title="Origin Zone Visualisation",
+    )
+    render_zone_effectiveness_chart(
+        records,
+        "origin_zone",
+        phase,
+        report_context=report_context,
+    )
+    render_zone_table(
+        "",
+        records,
+        "origin_zone",
+        phase,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Origin Zone Summary",
+    )
+    st.markdown("---")
+
+    # 3) SIDE
+    render_effectiveness_table(
+        "Side Effectiveness",
+        records,
+        "side",
+        phase,
+        "Side",
         report_context=report_context,
     )
     st.markdown("---")
 
+    # 4) HOW THE BALL IS DELIVERED
+    st.markdown("### Delivery Type")
+    if analysis_scope in {
+        "Competition Analysis",
+        "All Matches Analysis",
+    }:
+        render_delivery_type_scatter(
+            records,
+            phase,
+            report_context=report_context,
+        )
+
+    render_effectiveness_table(
+        "Delivery Type Effectiveness",
+        records,
+        "delivery_type",
+        phase,
+        "Delivery Type",
+        show_title=True,
+        report_context=report_context,
+        report_section_title="Delivery Type Effectiveness — Table",
+    )
+
+    if phase == "offensive":
+        st.write("")
+        st.markdown("#### Opponent Context")
+        render_effectiveness_table(
+            "Opponent Organization",
+            records,
+            "opponent_organization",
+            phase,
+            "Opponent Organization",
+            report_context=report_context,
+        )
+    st.markdown("---")
+
+    # 5) WHERE THE DELIVERY GOES
+    st.markdown("### Delivery Zone")
+    render_zone_visualisation(
+        records,
+        report_context=report_context,
+        zone_types=("delivery",),
+        show_heading=False,
+        report_section_title="Delivery Zone Visualisation",
+    )
+    render_zone_table(
+        "",
+        records,
+        "delivery_zone",
+        phase,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Delivery Zone Summary",
+    )
+    st.markdown("---")
+
+    # 6) FIRST CONTACT
+    st.markdown("### First Contact → Outcome")
+    render_first_contact_chart(
+        records,
+        phase,
+        report_context=report_context,
+    )
+    render_effectiveness_table(
+        "",
+        records,
+        "first_contact",
+        phase,
+        "First Contact",
+        first_contact_table=True,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="First Contact Effectiveness — Table",
+    )
+    st.markdown("---")
+
+    # 7) WHERE THE ACTION FINISHES
+    st.markdown("### Finishing Zone")
+    render_zone_visualisation(
+        records,
+        report_context=report_context,
+        zone_types=("finishing",),
+        show_heading=False,
+        report_section_title="Finishing Zone Visualisation",
+    )
+    render_zone_table(
+        "",
+        records,
+        "finishing_zone",
+        phase,
+        show_title=False,
+        report_context=report_context,
+        report_section_title="Finishing Zone Summary",
+    )
+    st.markdown("---")
+
+    # 8) TERMINAL OUTCOME
     render_outcome_breakdown(
         records,
         report_context=report_context,
     )
-    st.markdown("---")
 
-    render_effectiveness(
-        records,
-        phase,
-        analysis_scope,
-        report_context=report_context,
-    )
-    st.markdown("---")
-
-    render_zone_effectiveness(
-        records,
-        phase,
-        report_context=report_context,
-    )
