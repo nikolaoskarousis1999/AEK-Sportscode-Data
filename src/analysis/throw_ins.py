@@ -39,6 +39,15 @@ THROW_IN_ZONE_ORDER = [
 ]
 
 
+THROW_IN_GRAYSCALE = {
+    "Keep Possession": "#404040",
+    "Forward": "#656565",
+    "Loss Possession": "#C8C8C8",
+    "Box Entry": "#A0A0A0",
+    "Win Set Play": "#FFFFFF",
+}
+
+
 # ============================================================
 # BASIC HELPERS
 # ============================================================
@@ -566,6 +575,7 @@ def render_result_breakdown(
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
+        marker_color="#787878",
     )
 
     fig.update_layout(
@@ -783,6 +793,7 @@ def render_retention_by_zone(
         x=df["Zone"],
         y=df["Keep %"],
         name="Keep Possession",
+        marker_color=THROW_IN_GRAYSCALE["Keep Possession"],
         text=keep_display,
         textposition="inside",
         customdata=keep_display,
@@ -806,6 +817,7 @@ def render_retention_by_zone(
         x=df["Zone"],
         y=df["Loss %"],
         name="Loss Possession",
+        marker_color=THROW_IN_GRAYSCALE["Loss Possession"],
         text=loss_display,
         textposition="inside",
         customdata=loss_display,
@@ -1267,19 +1279,7 @@ def _build_pdf_labeled_bar_figure(
                     in metric_specs
                 ],
         },
-        color_discrete_map={
-            "Keep Possession":
-                "#7DBAF2",
-
-            "Forward":
-                "#0D76C9",
-
-            "Box Entry":
-                "#FFA1A6",
-
-            "Win Set Play":
-                "#F5C400",
-        },
+        color_discrete_map=THROW_IN_GRAYSCALE,
     )
 
     pdf_fig.update_traces(
@@ -1441,6 +1441,7 @@ def render_effectiveness_chart(
         color="Metric",
         barmode="group",
         text="Display",
+        color_discrete_map=THROW_IN_GRAYSCALE,
     )
 
     fig.update_traces(
@@ -1706,25 +1707,14 @@ def render_player_comparison(
         color="Metric",
         barmode="group",
         text="Display",
-        color_discrete_map={
-            "Keep Possession": "#7DBAF2",
-            "Forward": "#0D76C9",
-            "Box Entry": "#FFA1A6",
-            "Win Set Play": "#F5C400",
-        },
+        color_discrete_map=THROW_IN_GRAYSCALE,
     )
 
     # Force the Player Comparison palette explicitly so Plotly cannot
     # fall back to its default red for Win Set Play.
     for trace in fig.data:
-        player_colors = {
-            "Keep Possession": "#7DBAF2",
-            "Forward": "#0D76C9",
-            "Box Entry": "#FFA1A6",
-            "Win Set Play": "#F5C400",
-        }
-        if trace.name in player_colors:
-            trace.marker.color = player_colors[trace.name]
+        if trace.name in THROW_IN_GRAYSCALE:
+            trace.marker.color = THROW_IN_GRAYSCALE[trace.name]
 
     fig.update_traces(
         textposition="outside",

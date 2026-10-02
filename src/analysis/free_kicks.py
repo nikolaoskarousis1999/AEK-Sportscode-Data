@@ -29,6 +29,18 @@ COUNTER_LAUNCHED = "COUNTER LAUNCHED"
 CLEARANCE = "CLEARANCE"
 
 
+FREE_KICK_GRAYSCALE = {
+    "FC Won": "#606060",
+    "Attempt": "#A0A0A0",
+    "Attempt Conceded": "#787878",
+    "2nd Phase": "#505050",
+    "Goal": "#FFFFFF",
+    "Goal Conceded": "#FFFFFF",
+    "Counter Allowed": "#FFFFFF",
+    "Counter Launched": "#FFFFFF",
+}
+
+
 # ============================================================
 # FREE-KICK ZONE VISUALISATION
 # ============================================================
@@ -1173,6 +1185,7 @@ def render_outcome_breakdown(
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
+        marker_color="#787878",
         hovertemplate=(
             "<b>%{y}</b><br>%{x:.0f}% "
             f"(%{{customdata[0]}}/{total})<extra></extra>"
@@ -1290,6 +1303,7 @@ def render_first_contact_chart(
         barmode="group",
         text="Display",
         custom_data=["Count", "Total"],
+        color_discrete_map=FREE_KICK_GRAYSCALE,
     )
     fig.update_traces(
         textposition="outside",
@@ -1493,6 +1507,7 @@ def render_delivery_type_scatter(
         cliponaxis=False,
         marker=dict(
             size=7,
+            color="#C8C8C8",
             opacity=0.92,
             line=dict(
                 width=1,
@@ -1855,6 +1870,7 @@ def render_zone_effectiveness_chart(
         barmode="group",
         text="Display",
         custom_data=["Count", "Total"],
+        color_discrete_map=FREE_KICK_GRAYSCALE,
     )
     fig.update_traces(
         textposition="outside",

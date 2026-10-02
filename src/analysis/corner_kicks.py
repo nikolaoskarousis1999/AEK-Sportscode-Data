@@ -39,6 +39,38 @@ CLEARANCE = "CLEARANCE"
 
 
 # ============================================================
+# CHART COLOURS — GRAYSCALE
+# ============================================================
+
+CORNER_GRAYSCALE = {
+    # Dark -> light hierarchy for the analytical series.
+    "Attempt": "#555555",
+    "Attempt Conceded": "#555555",
+    "2nd Phase": "#8F8F8F",
+    "FC Won": "#C8C8C8",
+    "Counter Allowed": "#E8E8E8",
+    "Counter Launched": "#E8E8E8",
+    "Goal": "#F5F5F5",
+    "Goal Conceded": "#F5F5F5",
+}
+
+# Used when a chart has categorical bars/points rather than named metrics.
+# Ordered from dark to light so every Plotly chart stays grayscale.
+CORNER_GRAYSCALE_SEQUENCE = [
+    "#4A4A4A",
+    "#666666",
+    "#828282",
+    "#9E9E9E",
+    "#BABABA",
+    "#D6D6D6",
+    "#EEEEEE",
+]
+
+# Single neutral gray for categorical charts requested to use one color.
+CORNER_SINGLE_GRAY = "#8F8F8F"
+
+
+# ============================================================
 # CORNER ZONE ALIASES
 # ============================================================
 
@@ -1786,6 +1818,7 @@ def render_outcome_breakdown(
     fig.update_traces(
         textposition="outside",
         cliponaxis=False,
+        marker_color=CORNER_SINGLE_GRAY,
         hovertemplate=(
             "<b>%{y}</b><br>"
             "%{x:.0f}% "
@@ -2139,6 +2172,7 @@ def render_first_contact_chart(
             "Count",
             "Total",
         ],
+        color_discrete_map=CORNER_GRAYSCALE,
     )
 
     fig.update_traces(
@@ -2359,12 +2393,23 @@ def render_delivery_type_scatter(
         in df["Attempt Rate"]
     ]
 
+    delivery_types = [
+        str(value)
+        for value in df["Delivery Type"].tolist()
+    ]
+    delivery_color_map = {
+        delivery_type: CORNER_SINGLE_GRAY
+        for delivery_type in delivery_types
+    }
+
     fig = px.scatter(
         df,
 
         x="FC Won Rate",
 
         y="Attempt Rate",
+
+        color="Delivery Type",
 
         text="Delivery Type",
 
@@ -2375,6 +2420,7 @@ def render_delivery_type_scatter(
             "2nd Phase Display",
             "Counter Display",
         ],
+        color_discrete_map=delivery_color_map,
     )
 
     fig.update_traces(
@@ -3105,6 +3151,7 @@ def render_zone_effectiveness_chart(
             "Count",
             "Total",
         ],
+        color_discrete_map=CORNER_GRAYSCALE,
     )
 
     fig.update_traces(
