@@ -17,8 +17,15 @@ from src.reports.report_ui import (
 
 _ACTIVE_REPORT_CONTEXT = None
 
-# Goal charts use a violet accent instead of red.
-GOAL_CHART_COLOR = "#F5C400"
+# Consistent grayscale palette for Final Attempts charts.
+FINAL_ATTEMPT_GRAYSCALE = {
+    "On Target": "#C8C8C8",
+    "Off Target": "#787878",
+    "Blocked": "#505050",
+    "Goals": "#FFFFFF",
+}
+
+GOAL_CHART_COLOR = FINAL_ATTEMPT_GRAYSCALE["Goals"]
 
 
 TIME_PERIODS = [
@@ -713,6 +720,13 @@ def render_metric_chart(
                 "Metric":
                     metrics,
             },
+            color_discrete_map={
+                metric: FINAL_ATTEMPT_GRAYSCALE.get(
+                    metric,
+                    "#7A7A7A",
+                )
+                for metric in metrics
+            },
         )
 
         for trace in fig.data:
@@ -777,6 +791,13 @@ def render_metric_chart(
                     categories,
                 "Metric":
                     metrics,
+            },
+            color_discrete_map={
+                metric: FINAL_ATTEMPT_GRAYSCALE.get(
+                    metric,
+                    "#7A7A7A",
+                )
+                for metric in metrics
             },
         )
 
@@ -1041,6 +1062,11 @@ def render_time_profile(records):
                 "Blocked",
             ],
         },
+        color_discrete_map={
+            "On Target": FINAL_ATTEMPT_GRAYSCALE["On Target"],
+            "Off Target": FINAL_ATTEMPT_GRAYSCALE["Off Target"],
+            "Blocked": FINAL_ATTEMPT_GRAYSCALE["Blocked"],
+        },
         text="Attempts",
     )
 
@@ -1161,6 +1187,7 @@ def render_attack_type(records):
 
     fig.update_traces(
         textposition="outside",
+        marker_color="#9C9C9C",
     )
 
     fig.update_layout(
