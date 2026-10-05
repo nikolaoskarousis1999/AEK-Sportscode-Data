@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 from io import BytesIO
-import subprocess
-import sys
 
 from playwright.sync_api import sync_playwright
 
@@ -603,27 +601,56 @@ def _build_plotly_image(
 
 
 # ============================================================
-# PLAYWRIGHT / CHROMIUM
+# PLAYWRIGHT / BROWSER LAUNCH
 # ============================================================
 
-def _install_playwright_chromium() -> None:
+def _launch_browser(playwright):
     """
-    Install the Chromium binary required by Playwright.
+    Launch a browser for rendering Streamlit HTML visualisations.
 
-    This is used only as a fallback when Playwright reports that its
-    Chromium executable is missing. Keeping installation lazy avoids
-    starting a second temporary Playwright connection, which can produce
-    shutdown warnings on Windows.
+    Order:
+    1. Playwright-managed Chromium, if already installed.
+    2. System Google Chrome.
+    3. System Microsoft Edge.
+
+    Report generation must never try to download or install a browser.
+    This keeps PDF creation reliable on local Windows environments and
+    avoids failing halfway through a large report.
     """
-    subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "playwright",
-            "install",
-            "chromium",
-        ],
-        check=True,
+    errors = []
+
+    try:
+        return playwright.chromium.launch(
+            headless=True,
+        )
+    except Exception as exc:
+        errors.append(
+            f"Playwright Chromium: {exc}"
+        )
+
+    try:
+        return playwright.chromium.launch(
+            channel="chrome",
+            headless=True,
+        )
+    except Exception as exc:
+        errors.append(
+            f"Google Chrome: {exc}"
+        )
+
+    try:
+        return playwright.chromium.launch(
+            channel="msedge",
+            headless=True,
+        )
+    except Exception as exc:
+        errors.append(
+            f"Microsoft Edge: {exc}"
+        )
+
+    raise RuntimeError(
+        "Could not launch a browser for the report visualisation.\n\n"
+        + "\n\n".join(errors)
     )
 
 
@@ -667,30 +694,14 @@ def _build_html_visual_image(
         )
     )
 
-    # Chromium screenshot of the same iframe content.
+    # Chromium-compatible screenshot of the same iframe content.
+    # Prefer Playwright Chromium when available, then fall back to the
+    # system Chrome or Edge installation. No browser is installed here.
     # device_scale_factor=2 keeps text/lines sharp in the PDF.
     with sync_playwright() as playwright:
-        try:
-            browser = playwright.chromium.launch(
-                headless=True,
-            )
-
-        except Exception as exc:
-            message = str(exc)
-
-            if (
-                "Executable doesn't exist"
-                not in message
-                and "executable doesn't exist"
-                not in message.lower()
-            ):
-                raise
-
-            _install_playwright_chromium()
-
-            browser = playwright.chromium.launch(
-                headless=True,
-            )
+        browser = _launch_browser(
+            playwright
+        )
 
         try:
             page = browser.new_page(
