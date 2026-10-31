@@ -1916,7 +1916,7 @@ def render_zone_effectiveness(
 # MAIN RENDER
 # ============================================================
 
-def render_throw_in_analysis(
+def render_offensive_throw_in_analysis(
     analysis: dict,
     report_context: dict | None = None,
 ):
@@ -2240,3 +2240,956 @@ def render_throw_in_analysis(
         records,
         report_context=report_context,
     )
+
+# ============================================================
+# DEFENSIVE THROW-INS
+# ============================================================
+
+OPP_POSS = "OPP POSS"
+WIN_POSS = "WIN POSS"
+
+ACTIVE_PRESS = "ACTIVE PRESS"
+UNORGANIZED_LATE = "UNORGANIZED/LATE"
+
+SWITCH_PLAY_OPP = "SWITCH PLAY OPP"
+WIN_SET_PLAY_OPP = "WIN SP OPP (TI,FK,CK)"
+ATTACK_SPACE_OPP = "ATTACK SPACE OPP"
+BOX_ENTRY_OPP = "BOX ENTRY OPP"
+COUNTER_LAUNCHED = "COUNTER LAUNCHED"
+
+# Sportscode panel wording can vary slightly between versions/templates.
+# These aliases keep the analysis robust without changing the raw XML values.
+DEFENSIVE_RESULT_ALIASES = {
+    "Switch Play Opp": ["SWITCH PLAY OPP"],
+    "Win Set Play Opp": [
+        "WIN SP OPP (TI,FK,CK)",
+        "WIN SP OPP",
+    ],
+    "Attack Space Opp": ["ATTACK SPACE OPP"],
+    "Box Entry Opp": ["BOX ENTRY OPP"],
+    "Finishing Opp": [
+        "FINISHING OFF",
+        "FINISHING OPP",
+        "FINISHING",
+    ],
+    "Counter Launched": ["COUNTER LAUNCHED"],
+}
+
+
+def count_events_with_any_value(
+    records: list[dict],
+    key: str,
+    target_values: list[str],
+) -> int:
+    """Count events that contain at least one of the requested values."""
+    return sum(
+        1
+        for record in records
+        if any(
+            event_has_value(record, key, target)
+            for target in target_values
+        )
+    )
+
+
+def _defensive_retention_metrics(
+    records: list[dict],
+) -> dict:
+    coded_records = [
+        record
+        for record in records
+        if get_record_category_values(record, "retention")
+    ]
+
+    denominator = len(coded_records)
+
+    opponent_possession = count_events_with_value(
+        coded_records,
+        "retention",
+        OPP_POSS,
+    )
+    possession_won = count_events_with_value(
+        coded_records,
+        "retention",
+        WIN_POSS,
+    )
+
+    return {
+        "coded": denominator,
+        "opp_poss": opponent_possession,
+        "win_poss": possession_won,
+        "opp_poss_rate": calculate_rate(opponent_possession, denominator),
+        "win_poss_rate": calculate_rate(possession_won, denominator),
+    }
+
+
+def calculate_defensive_throw_in_kpis(
+    records: list[dict],
+) -> dict:
+    total = len(records)
+    retention = _defensive_retention_metrics(records)
+
+    most_common_zone, zone_count = get_most_common_value(
+        records,
+        "throw_in_zone",
+    )
+    most_common_length, length_count = get_most_common_value(
+        records,
+        "length",
+    )
+    most_common_speed, speed_count = get_most_common_value(
+        records,
+        "speed",
+    )
+    most_common_pressing, pressing_count = get_most_common_value(
+        records,
+        "pressing",
+    )
+
+    return {
+        "total": total,
+        "retention_coded": retention["coded"],
+        "opp_poss": retention["opp_poss"],
+        "win_poss": retention["win_poss"],
+        "counter_launched": count_events_with_any_value(
+            records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Counter Launched"],
+        ),
+        "box_entry_opp": count_events_with_any_value(
+            records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Box Entry Opp"],
+        ),
+        "finishing_opp": count_events_with_any_value(
+            records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Finishing Opp"],
+        ),
+        "win_set_play_opp": count_events_with_any_value(
+            records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Win Set Play Opp"],
+        ),
+        "most_common_zone": most_common_zone,
+        "zone_count": zone_count,
+        "most_common_length": most_common_length,
+        "length_count": length_count,
+        "most_common_speed": most_common_speed,
+        "speed_count": speed_count,
+        "most_common_pressing": most_common_pressing,
+        "pressing_count": pressing_count,
+    }
+
+
+def build_defensive_effectiveness_dataframe(
+    records: list[dict],
+    group_key: str,
+) -> pd.DataFrame:
+    categories = count_categories(records, group_key)
+    rows = []
+
+    for category in categories:
+        category_records = records_with_category(
+            records,
+            group_key,
+            category,
+        )
+        total = len(category_records)
+        retention = _defensive_retention_metrics(category_records)
+        retention_coded = retention["coded"]
+
+        active_press = count_events_with_value(
+            category_records,
+            "pressing",
+            ACTIVE_PRESS,
+        )
+        counter_launched = count_events_with_any_value(
+            category_records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Counter Launched"],
+        )
+        box_entry = count_events_with_any_value(
+            category_records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Box Entry Opp"],
+        )
+        finishing = count_events_with_any_value(
+            category_records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Finishing Opp"],
+        )
+        win_sp = count_events_with_any_value(
+            category_records,
+            "outcome",
+            DEFENSIVE_RESULT_ALIASES["Win Set Play Opp"],
+        )
+
+        rows.append(
+            {
+                "Category": category,
+                "Throw-ins Faced": total,
+                "Retention Coded": retention_coded,
+                "Win Possession %": calculate_rate(
+                    retention["win_poss"],
+                    retention_coded,
+                ),
+                "Win Possession": format_rate(
+                    retention["win_poss"],
+                    retention_coded,
+                ),
+                "Opp Possession %": calculate_rate(
+                    retention["opp_poss"],
+                    retention_coded,
+                ),
+                "Opp Possession": format_rate(
+                    retention["opp_poss"],
+                    retention_coded,
+                ),
+                "Active Press %": calculate_rate(active_press, total),
+                "Active Press": format_rate(active_press, total),
+                "Counter Launched %": calculate_rate(counter_launched, total),
+                "Counter Launched": format_rate(counter_launched, total),
+                "Box Entry Opp %": calculate_rate(box_entry, total),
+                "Box Entry Opp": format_rate(box_entry, total),
+                "Finishing Opp %": calculate_rate(finishing, total),
+                "Finishing Opp": format_rate(finishing, total),
+                "Win Set Play Opp %": calculate_rate(win_sp, total),
+                "Win Set Play Opp": format_rate(win_sp, total),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    if df.empty:
+        return df
+
+    return (
+        df
+        .sort_values(
+            ["Throw-ins Faced", "Category"],
+            ascending=[False, True],
+        )
+        .reset_index(drop=True)
+    )
+
+
+def render_defensive_effectiveness_table(
+    title: str,
+    df: pd.DataFrame,
+    report_context: dict | None = None,
+):
+    st.markdown(f"#### {title}")
+
+    if df.empty:
+        st.info("No defensive throw-in data available for this section.")
+        return
+
+    display_df = df[
+        [
+            "Category",
+            "Throw-ins Faced",
+            "Win Possession",
+            "Opp Possession",
+            "Active Press",
+            "Counter Launched",
+            "Box Entry Opp",
+            "Finishing Opp",
+            "Win Set Play Opp",
+        ]
+    ].copy()
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        item = create_table_report_item(
+            module="throw_in",
+            section_title=title,
+            dataframe=display_df,
+            context=report_context,
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_throw_def_table_{title}_{item['id']}",
+        )
+
+
+def render_defensive_effectiveness_chart(
+    title: str,
+    df: pd.DataFrame,
+    report_context: dict | None = None,
+):
+    """
+    Defensive equivalent of the offensive effectiveness chart.
+
+    The visual structure intentionally mirrors the offensive Throw-ins page:
+    grouped bars first, followed by the detailed table.
+    """
+    st.markdown(f"#### {title}")
+
+    if df.empty:
+        st.info("No defensive throw-in data available for this section.")
+        return
+
+    chart_df = df[
+        [
+            "Category",
+            "Win Possession %",
+            "Box Entry Opp %",
+            "Win Set Play Opp %",
+        ]
+    ].copy()
+
+    chart_long = (
+        chart_df
+        .melt(
+            id_vars=["Category"],
+            value_vars=[
+                "Win Possession %",
+                "Box Entry Opp %",
+                "Win Set Play Opp %",
+            ],
+            var_name="Metric",
+            value_name="Percentage",
+        )
+    )
+
+    chart_long["Metric"] = (
+        chart_long["Metric"]
+        .replace(
+            {
+                "Win Possession %": "Win Possession",
+                "Box Entry Opp %": "Box Entry Opp",
+                "Win Set Play Opp %": "Win Set Play Opp",
+            }
+        )
+    )
+
+    display_lookup = {}
+
+    for _, row in df.iterrows():
+        category = str(row["Category"])
+
+        display_lookup[
+            (category, "Win Possession")
+        ] = row["Win Possession"]
+
+        display_lookup[
+            (category, "Box Entry Opp")
+        ] = row["Box Entry Opp"]
+
+        display_lookup[
+            (category, "Win Set Play Opp")
+        ] = row["Win Set Play Opp"]
+
+    chart_long["Display"] = [
+        display_lookup.get(
+            (str(category), str(metric)),
+            "",
+        )
+        for category, metric in zip(
+            chart_long["Category"],
+            chart_long["Metric"],
+        )
+    ]
+
+    defensive_grayscale = {
+        "Win Possession": "#404040",
+        "Box Entry Opp": "#A0A0A0",
+        "Win Set Play Opp": "#FFFFFF",
+    }
+
+    fig = px.bar(
+        chart_long,
+        x="Category",
+        y="Percentage",
+        color="Metric",
+        barmode="group",
+        text="Display",
+        color_discrete_map=defensive_grayscale,
+    )
+
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        textfont=dict(
+            size=12,
+        ),
+    )
+
+    fig.update_layout(
+        height=390,
+        margin=dict(
+            l=20,
+            r=20,
+            t=10,
+            b=20,
+        ),
+        xaxis_title="",
+        yaxis_title="Rate (%)",
+        yaxis=dict(
+            range=[
+                0,
+                115,
+            ]
+        ),
+        legend_title="",
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        pdf_fig = _build_pdf_labeled_bar_figure(
+            df,
+            [
+                (
+                    "Win Possession %",
+                    "Win Possession",
+                    "Win Possession",
+                ),
+                (
+                    "Box Entry Opp %",
+                    "Box Entry Opp",
+                    "Box Entry Opp",
+                ),
+                (
+                    "Win Set Play Opp %",
+                    "Win Set Play Opp",
+                    "Win Set Play Opp",
+                ),
+            ],
+        )
+
+        report_item = create_plotly_report_item(
+            module="throw_in",
+            section_title=title,
+            figure=pdf_fig,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            report_item,
+            key=(
+                "report_throw_def_effectiveness_"
+                f"{title}_{report_item['id']}"
+            ),
+        )
+
+    display_df = df[
+        [
+            "Category",
+            "Throw-ins Faced",
+            "Win Possession",
+            "Opp Possession",
+            "Active Press",
+            "Counter Launched",
+            "Box Entry Opp",
+            "Finishing Opp",
+            "Win Set Play Opp",
+        ]
+    ].copy()
+
+    st.dataframe(
+        display_df,
+        hide_index=True,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        table_item = create_table_report_item(
+            module="throw_in",
+            section_title=f"{title} — Table",
+            dataframe=display_df,
+            context=report_context,
+        )
+
+        render_add_to_report_button(
+            table_item,
+            key=(
+                "report_throw_def_effectiveness_table_"
+                f"{title}_{table_item['id']}"
+            ),
+        )
+
+
+def render_defensive_retention_by_zone(
+    records: list[dict],
+    report_context: dict | None = None,
+):
+    st.markdown("### Possession Outcome by Zone")
+
+    df = build_defensive_effectiveness_dataframe(
+        records,
+        "throw_in_zone",
+    )
+
+    if df.empty:
+        st.info("No defensive throw-in zone data available.")
+        return
+
+    # Keep the same pitch progression used throughout the Throw-ins module:
+    # DEF -> PRE-DEF -> PRE-OFF -> OFF.
+    zone_rank = {
+        zone: index
+        for index, zone in enumerate(
+            THROW_IN_ZONE_ORDER
+        )
+    }
+
+    df = (
+        df.assign(
+            _zone_order=df["Category"].map(
+                zone_rank
+            ).fillna(
+                len(
+                    THROW_IN_ZONE_ORDER
+                )
+            )
+        )
+        .sort_values(
+            [
+                "_zone_order",
+                "Category",
+            ]
+        )
+        .drop(
+            columns=[
+                "_zone_order",
+            ]
+        )
+        .reset_index(
+            drop=True
+        )
+    )
+
+    fig = go.Figure()
+
+    # Win Possession is intentionally the lower segment.
+    fig.add_bar(
+        x=df["Category"],
+        y=df["Win Possession %"],
+        name="Win Possession",
+        marker_color="#404040",
+        text=df["Win Possession"],
+        textposition="inside",
+    )
+
+    # Opponent Possession is stacked above Win Possession.
+    fig.add_bar(
+        x=df["Category"],
+        y=df["Opp Possession %"],
+        name="Opponent Possession",
+        marker_color="#C8C8C8",
+        text=df["Opp Possession"],
+        textposition="inside",
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=df["Category"],
+            y=df["Counter Launched %"],
+            mode="lines+markers+text",
+            name="Counter Launched",
+            text=df["Counter Launched"],
+            textposition="top center",
+            line=dict(
+                width=5,
+                color="#FFD54F",
+            ),
+            marker=dict(
+                size=12,
+                color="#FFD54F",
+                line=dict(
+                    width=2,
+                    color="white",
+                ),
+            ),
+            yaxis="y2",
+        )
+    )
+
+    fig.update_layout(
+        barmode="stack",
+        height=430,
+        margin=dict(
+            l=20,
+            r=260,
+            t=10,
+            b=20,
+        ),
+        xaxis_title="",
+        xaxis=dict(
+            categoryorder="array",
+            categoryarray=[
+                zone
+                for zone in THROW_IN_ZONE_ORDER
+                if zone in set(
+                    df["Category"]
+                )
+            ],
+        ),
+        yaxis_title=(
+            "Possession Outcome (%)"
+        ),
+        yaxis=dict(
+            range=[
+                0,
+                100,
+            ]
+        ),
+        yaxis2=dict(
+            title=dict(
+                text=(
+                    "Counter Launched Rate (%)"
+                ),
+                font=dict(
+                    color="#FFD54F"
+                ),
+            ),
+            range=[
+                0,
+                100,
+            ],
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            tickfont=dict(
+                color="#FFD54F"
+            ),
+        ),
+        legend_title="",
+        legend=dict(
+            x=1.16,
+            xanchor="left",
+            y=1.0,
+            yanchor="top",
+            traceorder="normal",
+            bgcolor="rgba(0,0,0,0.35)",
+        ),
+    )
+
+    st.plotly_chart(
+        fig,
+        width="stretch",
+    )
+
+    if report_context is not None:
+        item = create_plotly_report_item(
+            module="throw_in",
+            section_title=(
+                "Defensive Possession Outcome by Zone"
+            ),
+            figure=fig,
+            context=report_context,
+        )
+        render_add_to_report_button(
+            item,
+            key=(
+                "report_throw_def_ret_zone_"
+                f"{item['id']}"
+            ),
+        )
+
+
+def build_defensive_result_dataframe(
+    records: list[dict],
+) -> pd.DataFrame:
+    total = len(records)
+    rows = []
+
+    for label, aliases in DEFENSIVE_RESULT_ALIASES.items():
+        count = count_events_with_any_value(
+            records,
+            "outcome",
+            aliases,
+        )
+        rows.append(
+            {
+                "Outcome": label,
+                "Count": count,
+                "Percentage": calculate_rate(count, total),
+                "Display": format_rate(count, total),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+    return (
+        df
+        .sort_values("Percentage", ascending=True)
+        .reset_index(drop=True)
+    )
+
+
+def render_defensive_result_breakdown(
+    records: list[dict],
+    report_context: dict | None = None,
+):
+    st.markdown("### Defensive Outcome Breakdown")
+
+    df = build_defensive_result_dataframe(records)
+
+    fig = px.bar(
+        df,
+        x="Percentage",
+        y="Outcome",
+        orientation="h",
+        text="Display",
+    )
+    fig.update_traces(
+        textposition="outside",
+        cliponaxis=False,
+        marker_color="#787878",
+    )
+    fig.update_layout(
+        height=max(300, 55 * len(df)),
+        margin=dict(l=20, r=130, t=10, b=20),
+        xaxis_title="Throw-in Faced Rate (%)",
+        yaxis_title="",
+        xaxis=dict(range=[0, 110]),
+        showlegend=False,
+    )
+
+    st.plotly_chart(fig, width="stretch")
+    st.caption(
+        "Defensive outcome labels are not assumed to be mutually exclusive. "
+        "One opponent throw-in can contain more than one outcome label."
+    )
+
+    if report_context is not None:
+        item = create_plotly_report_item(
+            module="throw_in",
+            section_title="Defensive Outcome Breakdown",
+            figure=fig,
+            context=report_context,
+            notes=[
+                "Defensive outcome labels are not assumed to be mutually exclusive."
+            ],
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_throw_def_results_{item['id']}",
+        )
+
+
+def render_defensive_throw_in_analysis(
+    analysis: dict,
+    report_context: dict | None = None,
+):
+    records = analysis["records"]
+
+    if not records:
+        st.info("No defensive throw-in events found for the selected filters.")
+        return
+
+    kpis = calculate_defensive_throw_in_kpis(records)
+    total = kpis["total"]
+    retention_denominator = kpis["retention_coded"]
+
+    st.subheader("Throw-ins — Defensive")
+
+    render_create_report_button(
+        "throw_in",
+        key="create_throw_in_defensive_report",
+    )
+
+    st.markdown("### KPIs Overview")
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Throw-ins Faced", total)
+    with c2:
+        st.metric(
+            "Win Possession",
+            format_rate(kpis["win_poss"], retention_denominator),
+        )
+    with c3:
+        st.metric(
+            "Counter Launched",
+            format_rate(kpis["counter_launched"], total),
+        )
+    with c4:
+        st.metric(
+            "Box Entry Opp",
+            format_rate(kpis["box_entry_opp"], total),
+        )
+
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
+        st.metric(
+            "Finishing Opp",
+            format_rate(kpis["finishing_opp"], total),
+        )
+    with c6:
+        st.metric(
+            "Set Play Won Opp",
+            format_rate(kpis["win_set_play_opp"], total),
+        )
+    with c7:
+        st.metric(
+            "Most Common Zone",
+            kpis["most_common_zone"],
+            help=f"{kpis['zone_count']}/{total} opponent throw-ins",
+        )
+    with c8:
+        st.metric(
+            "Most Common Pressing",
+            kpis["most_common_pressing"],
+            help=f"{kpis['pressing_count']}/{total} opponent throw-ins",
+        )
+
+    c9, c10 = st.columns(2)
+    with c9:
+        st.metric(
+            "Most Common Length",
+            kpis["most_common_length"],
+            help=f"{kpis['length_count']}/{total} opponent throw-ins",
+        )
+    with c10:
+        st.metric(
+            "Most Common Speed",
+            kpis["most_common_speed"],
+            help=f"{kpis['speed_count']}/{total} opponent throw-ins",
+        )
+
+    if retention_denominator < total:
+        st.caption(
+            f"Defensive retention is coded for {retention_denominator}/{total} "
+            "of the currently filtered opponent throw-ins."
+        )
+
+    if report_context is not None:
+        item = create_kpi_report_item(
+            module="throw_in",
+            section_title="Defensive KPIs Overview",
+            context=report_context,
+            kpis=[
+                {"label": "Throw-ins Faced", "value": str(total)},
+                {"label": "Win Possession", "value": format_rate(kpis["win_poss"], retention_denominator)},
+                {"label": "Counter Launched", "value": format_rate(kpis["counter_launched"], total)},
+                {"label": "Box Entry Opp", "value": format_rate(kpis["box_entry_opp"], total)},
+                {"label": "Finishing Opp", "value": format_rate(kpis["finishing_opp"], total)},
+                {"label": "Set Play Won Opp", "value": format_rate(kpis["win_set_play_opp"], total)},
+                {"label": "Most Common Zone", "value": kpis["most_common_zone"]},
+                {"label": "Most Common Pressing", "value": kpis["most_common_pressing"]},
+                {"label": "Most Common Length", "value": kpis["most_common_length"]},
+                {"label": "Most Common Speed", "value": kpis["most_common_speed"]},
+            ],
+        )
+        render_add_to_report_button(
+            item,
+            key=f"report_throw_def_kpis_{item['id']}",
+        )
+
+    # Where the opponent throw starts
+    st.markdown("---")
+    zone_df = build_defensive_effectiveness_dataframe(
+        records,
+        "throw_in_zone",
+    )
+    render_defensive_effectiveness_table(
+        "Zone Effectiveness",
+        zone_df,
+        report_context=report_context,
+    )
+
+    # How the opponent throw is executed
+    st.markdown("---")
+    st.markdown("### Execution Effectiveness")
+
+    direction_df = build_defensive_effectiveness_dataframe(records, "direction")
+    speed_df = build_defensive_effectiveness_dataframe(records, "speed")
+    length_df = build_defensive_effectiveness_dataframe(records, "length")
+
+    tab1, tab2, tab3 = st.tabs(["Direction", "Speed", "Length"])
+    with tab1:
+        render_defensive_effectiveness_chart(
+            "Direction Effectiveness",
+            direction_df,
+            report_context=report_context,
+        )
+    with tab2:
+        render_defensive_effectiveness_chart(
+            "Speed Effectiveness",
+            speed_df,
+            report_context=report_context,
+        )
+    with tab3:
+        render_defensive_effectiveness_chart(
+            "Length Effectiveness",
+            length_df,
+            report_context=report_context,
+        )
+
+    # Pressing response
+    st.markdown("---")
+    pressing_df = build_defensive_effectiveness_dataframe(records, "pressing")
+    render_defensive_effectiveness_chart(
+        "Pressing Effectiveness",
+        pressing_df,
+        report_context=report_context,
+    )
+
+    # Immediate possession outcome by field zone
+    st.markdown("---")
+    render_defensive_retention_by_zone(
+        records,
+        report_context=report_context,
+    )
+
+    # Final coded outcomes
+    st.markdown("---")
+    render_defensive_result_breakdown(
+        records,
+        report_context=report_context,
+    )
+
+
+def _get_throw_in_phase(
+    analysis: dict,
+    records: list[dict],
+) -> str:
+    """Resolve phase without requiring a change to the existing caller."""
+    phase = analysis.get("phase")
+    if phase:
+        return _normalize_text(phase).lower()
+
+    for record in records:
+        record_phase = record.get("phase")
+        if record_phase:
+            return _normalize_text(record_phase).lower()
+
+        code = _normalize_text(record.get("code"))
+        if code == "16 THROW IN OPP":
+            return "defensive"
+        if code == "12 THROW IN":
+            return "offensive"
+
+    # Preserve the behaviour of the existing dashboard for old data/callers.
+    return "offensive"
+
+
+def render_throw_in_analysis(
+    analysis: dict,
+    report_context: dict | None = None,
+):
+    records = analysis.get("records", [])
+    phase = _get_throw_in_phase(analysis, records)
+
+    if phase == "defensive":
+        render_defensive_throw_in_analysis(
+            analysis,
+            report_context=report_context,
+        )
+        return
+
+    render_offensive_throw_in_analysis(
+        analysis,
+        report_context=report_context,
+    )
+

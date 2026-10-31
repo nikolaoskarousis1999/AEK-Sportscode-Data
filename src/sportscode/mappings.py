@@ -24,6 +24,11 @@ EVENT_CODE_MAP = {
         "phase": "offensive",
     },
 
+    "16 Throw in Opp": {
+        "event_family": "throw_in",
+        "phase": "defensive",
+    },
+
     "sGoal": {
         "event_family": "final_attempt",
         "phase": "offensive",
@@ -99,6 +104,12 @@ GROUP_KEY_MAP = {
 
     "RETENTION":
         "retention",
+
+    "PRESS":
+        "pressing",
+
+    "PRESSING":
+        "pressing",
 
     "15 Outcome":
         "outcome",

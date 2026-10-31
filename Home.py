@@ -530,29 +530,21 @@ elif (
 # SIDEBAR - PHASE
 # ============================================================
 
-if selected_event_family == "throw_in":
-    selected_phase = "offensive"
-
-    st.sidebar.caption(
-        "Phase: Offensive"
+phase_name = (
+    st.sidebar.radio(
+        "Phase",
+        [
+            "Offensive",
+            "Defensive",
+        ],
+        horizontal=True,
+        key="phase",
     )
+)
 
-else:
-    phase_name = (
-        st.sidebar.radio(
-            "Phase",
-            [
-                "Offensive",
-                "Defensive",
-            ],
-            horizontal=True,
-            key="phase",
-        )
-    )
-
-    selected_phase = (
-        phase_name.lower()
-    )
+selected_phase = (
+    phase_name.lower()
+)
 
 
 # ============================================================
@@ -889,14 +881,17 @@ elif (
         "throw_in_half",
     )
 
-    active_filters[
-        "taker"
-    ] = sidebar_single_filter(
-        "Taker",
-        base_records,
-        "taker",
-        "throw_in_taker",
-    )
+    # Offensive throw-ins keep the Taker filter.
+    # Defensive throw-ins do not store a taker/player label.
+    if selected_phase == "offensive":
+        active_filters[
+            "taker"
+        ] = sidebar_single_filter(
+            "Taker",
+            base_records,
+            "taker",
+            "throw_in_taker",
+        )
 
     active_filters[
         "throw_in_zone"
@@ -934,14 +929,34 @@ elif (
         "throw_in_length",
     )
 
-    active_filters[
-        "result"
-    ] = sidebar_multi_filter(
-        "Result",
-        base_records,
-        "result",
-        "throw_in_result",
-    )
+    if selected_phase == "offensive":
+        active_filters[
+            "result"
+        ] = sidebar_multi_filter(
+            "Result",
+            base_records,
+            "result",
+            "throw_in_result",
+        )
+
+    else:
+        active_filters[
+            "pressing"
+        ] = sidebar_multi_filter(
+            "Pressing",
+            base_records,
+            "pressing",
+            "throw_in_pressing",
+        )
+
+        active_filters[
+            "outcome"
+        ] = sidebar_multi_filter(
+            "Outcome",
+            base_records,
+            "outcome",
+            "throw_in_outcome",
+        )
 
     active_filters[
         "retention"
@@ -1194,6 +1209,8 @@ filtered_records = (
 
 filtered_analysis = {
     **analysis,
+    "phase":
+        selected_phase,
     "records":
         filtered_records,
 }
